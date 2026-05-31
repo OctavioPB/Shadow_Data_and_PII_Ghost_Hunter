@@ -1,0 +1,41 @@
+# ─── Secrets ─────────────────────────────────
+.env
+*.pem
+*.key
+*.crt
+
+# ─── Python ──────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ─── Node / Dashboard ────────────────────────
+dashboard/node_modules/
+dashboard/dist/
+dashboard/coverage/
+
+# ─── ML artifacts (stored in S3) ─────────────
+ml/data/labeled/
+ml/models/*.tar.gz
+ml/reports/*.json
+
+# ─── Terraform ───────────────────────────────
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform.lock.hcl
+
+# ─── Docker / OS ─────────────────────────────
+.DS_Store
+Thumbs.db
+*.log

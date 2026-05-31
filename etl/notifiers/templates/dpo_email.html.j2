@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PII Alert — {{ source_name }}</title>
+</head>
+<body style="font-family: 'Plus Jakarta Sans', Arial, sans-serif; color: #1A1A2E; background: #F8F9FC; padding: 24px;">
+  <table width="640" cellpadding="0" cellspacing="0" style="margin: 0 auto; background: #FFFFFF; border-radius: 8px; overflow: hidden;">
+
+    <!-- Header -->
+    <tr>
+      <td style="background: #003366; padding: 28px 32px;">
+        <span style="color: #C8982A; font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase;">
+          Privacy Risk Alert
+        </span>
+        <h1 style="color: #FFFFFF; font-size: 22px; margin: 8px 0 0;">
+          High-Confidence PII Detected
+        </h1>
+      </td>
+    </tr>
+
+    <!-- Body -->
+    <tr>
+      <td style="padding: 32px;">
+        <p style="margin: 0 0 16px;">Dear Data Protection Officer,</p>
+        <p style="margin: 0 0 24px;">
+          The PII Ghost-Hunter system has automatically detected and quarantined
+          a table containing high-confidence personally identifiable information.
+          Immediate review is required under GDPR Article 33 / LGPD Article 48.
+        </p>
+
+        <!-- Summary box -->
+        <table width="100%" cellpadding="0" cellspacing="0"
+               style="background: #F0F4FA; border-left: 4px solid #C8982A;
+                      border-radius: 4px; margin-bottom: 24px;">
+          <tr>
+            <td style="padding: 16px 20px;">
+              <table width="100%">
+                <tr>
+                  <td style="color: #5A6475; font-size: 12px; font-weight: 600;
+                             text-transform: uppercase; padding-bottom: 4px;">Source</td>
+                  <td style="font-weight: 600;">{{ source_name }}</td>
+                </tr>
+                <tr>
+                  <td style="color: #5A6475; font-size: 12px; font-weight: 600;
+                             text-transform: uppercase; padding-bottom: 4px;">Table ID</td>
+                  <td style="font-family: monospace;">{{ table_id }}</td>
+                </tr>
+                <tr>
+                  <td style="color: #5A6475; font-size: 12px; font-weight: 600;
+                             text-transform: uppercase; padding-bottom: 4px;">PII Categories</td>
+                  <td>
+                    {% for cat in flagged_categories %}
+                      <span style="background: #FFE4E4; color: #C0392B; font-size: 11px;
+                                   font-weight: 700; padding: 2px 8px; border-radius: 12px;
+                                   margin-right: 4px;">{{ cat }}</span>
+                    {% endfor %}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="color: #5A6475; font-size: 12px; font-weight: 600;
+                             text-transform: uppercase; padding-bottom: 4px;">Confidence</td>
+                  <td>{{ "%.0f" | format(max_confidence * 100) }}%</td>
+                </tr>
+                <tr>
+                  <td style="color: #5A6475; font-size: 12px; font-weight: 600;
+                             text-transform: uppercase;">Data Owner</td>
+                  <td>{{ owner_email or "Unknown" }}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Findings table -->
+        {% if findings %}
+        <h3 style="font-size: 14px; color: #003366; margin: 0 0 8px;">Column Findings</h3>
+        <table width="100%" cellpadding="0" cellspacing="0"
+               style="border-collapse: collapse; font-size: 13px; margin-bottom: 24px;">
+          <thead>
+            <tr style="background: #003366; color: #FFFFFF;">
+              <th style="padding: 8px 12px; text-align: left;">Column</th>
+              <th style="padding: 8px 12px; text-align: left;">PII Category</th>
+              <th style="padding: 8px 12px; text-align: right;">Confidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in findings %}
+            <tr style="background: {{ '#FFFFFF' if loop.index % 2 == 1 else '#F8F9FC' }};">
+              <td style="padding: 8px 12px; font-family: monospace;">{{ f.column_name }}</td>
+              <td style="padding: 8px 12px;">
+                <span style="background: #FFE4E4; color: #C0392B; font-size: 11px;
+                             font-weight: 700; padding: 2px 8px; border-radius: 12px;">
+                  {{ f.pii_category }}
+                </span>
+              </td>
+              <td style="padding: 8px 12px; text-align: right;">
+                {{ "%.1f" | format(f.confidence * 100) }}%
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
+
+        <!-- Recommended action -->
+        <div style="background: #FFF8E7; border: 1px solid #C8982A; border-radius: 6px;
+                    padding: 16px 20px; margin-bottom: 24px;">
+          <p style="margin: 0; font-weight: 600; color: #856404;">Recommended Action</p>
+          <p style="margin: 8px 0 0; color: #533E02;">{{ recommended_action }}</p>
+        </div>
+
+        <!-- CTA button -->
+        <table cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="background: #003366; border-radius: 6px; padding: 12px 24px;">
+              <a href="{{ dashboard_url }}/tables/{{ table_id }}/pii-report"
+                 style="color: #FFFFFF; text-decoration: none; font-weight: 600; font-size: 14px;">
+                Review in Privacy Dashboard →
+              </a>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+
+    <!-- Footer -->
+    <tr>
+      <td style="background: #F0F4FA; padding: 16px 32px; font-size: 11px; color: #8A94A6;">
+        This alert was generated automatically by PII Ghost-Hunter at {{ detected_at }}.
+        Data has been quarantined and is pending your review.
+      </td>
+    </tr>
+
+  </table>
+</body>
+</html>

@@ -1,0 +1,70 @@
+# Blue/green strategy for the PII Inference service.
+#
+# Both slots are always running. Traffic is shifted by changing the
+# activeSlot selector on the production Service. The inactive slot
+# receives no production traffic but stays warm so cutover is instant.
+#
+# Rollout procedure:
+#   1. Deploy new image to the INACTIVE slot.
+#   2. Smoke-test the inactive slot via the preview Service.
+#   3. Shift production traffic: set activeSlot=green (or blue).
+#   4. Monitor for 10 minutes; rollback if latency/error SLAs breach.
+#   5. Scale the now-inactive slot back to 1 replica to save cost.
+
+namespace: pii-ghost-hunter
+
+imageRegistry: ""
+
+# Which slot currently receives production traffic: blue | green
+activeSlot: blue
+
+blue:
+  image:
+    repository: pii-ghost-hunter/pii-inference
+    tag: stable
+    pullPolicy: IfNotPresent
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+
+green:
+  image:
+    repository: pii-ghost-hunter/pii-inference
+    tag: latest       # candidate version — update to new SHA before cutover
+    pullPolicy: IfNotPresent
+  replicaCount: 1    # warm standby; scale up to match blue before cutover
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+
+service:
+  port: 8001
+
+# Shared env for both slots
+env:
+  MODEL_CONFIDENCE_THRESHOLD: "0.85"
+
+secretName: pii-gh-inference-secrets
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8001
+  initialDelaySeconds: 60
+  periodSeconds: 30
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8001
+  initialDelaySeconds: 30
+  periodSeconds: 10

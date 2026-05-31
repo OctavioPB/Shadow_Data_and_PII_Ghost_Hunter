@@ -1,0 +1,40 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "UP",  # pyupgrade
+]
+ignore = ["E501"]  # line length handled by black
+
+[tool.ruff.per-file-ignores]
+"tests/**" = ["B011"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+include = '\.pyi?$'
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short --cov=api --cov=scanner --cov=ml --cov=etl --cov-report=term-missing --ignore=ml/training/train.py --ignore=tests/ml/test_inference_load.py --ignore=tests/etl/test_spark_anonymizer.py --ignore=tests/perf/locustfile.py --ignore=tests/e2e"
+filterwarnings = ["ignore::DeprecationWarning:passlib"]
+asyncio_mode = "auto"
+pythonpath = [".", "orchestration/plugins"]
+markers = [
+    "integration: end-to-end tests requiring Docker (run with -m integration)",
+    "asyncio: async tests (pytest-asyncio)",
+]
+
+[tool.coverage.run]
+source = ["api", "scanner", "ml", "etl"]
+omit = ["*/tests/*", "*/__init__.py", "*/migrations/*"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true

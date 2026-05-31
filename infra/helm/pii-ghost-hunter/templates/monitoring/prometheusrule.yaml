@@ -1,0 +1,80 @@
+{{- if and .Values.monitoring.enabled .Values.monitoring.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pii-ghost-hunter-alerts
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: pii-ghost-hunter
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: pii-api.rules
+      interval: 30s
+      rules:
+        - alert: PIIApiHighErrorRate
+          expr: |
+            rate(http_requests_total{job="pii-api",status=~"5.."}[5m]) /
+            rate(http_requests_total{job="pii-api"}[5m]) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PII API error rate > 5%"
+            description: "API is returning >5% 5xx errors for 5 minutes."
+
+        - alert: PIIApiHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              rate(http_request_duration_seconds_bucket{job="pii-api"}[5m])
+            ) > 0.5
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PII API p95 latency > 500ms"
+
+        - alert: PIIApiDown
+          expr: up{job="pii-api"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PII API is down"
+
+    - name: pii-inference.rules
+      interval: 30s
+      rules:
+        - alert: PIIInferenceHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              rate(http_request_duration_seconds_bucket{job="pii-inference"}[5m])
+            ) > 2.0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "PII Inference p95 latency > 2s"
+
+        - alert: PIIInferenceDown
+          expr: up{job="pii-inference"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "PII Inference service is down"
+
+    - name: pii-patrol.rules
+      interval: 60s
+      rules:
+        - alert: PatrolDAGFailedTwice
+          expr: |
+            increase(airflow_dag_run_failed_total{dag_id="patrol_new_tables"}[48h]) >= 2
+          for: 0m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Patrol DAG failed 2+ times in 48h"
+            runbook: "https://github.com/your-org/pii-ghost-hunter/blob/main/docs/runbooks/patrol-dag-failure.md"
+{{- end }}

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: pii-inference-bluegreen
+description: Blue/green deployment chart for the PII Inference service — zero-downtime model rollouts
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - pii
+  - inference
+  - blue-green
+  - zero-downtime
+maintainers:
+  - name: Platform Engineering
+    email: platform@company.com

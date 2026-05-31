@@ -1,0 +1,259 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, master]
+  push:
+    branches: [main, master]
+  schedule:
+    # Nightly E2E run at 02:00 UTC (Docker required)
+    - cron: "0 2 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  # ─── Python lint ────────────────────────────────────────────────────────────
+  python-lint:
+    name: Python lint (ruff + black)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install linting tools
+        run: pip install ruff black
+
+      - name: ruff check
+        run: ruff check .
+
+      - name: black check
+        run: black --check .
+
+  # ─── Python dependency audit ────────────────────────────────────────────────
+  python-audit:
+    name: Python dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit production dependencies
+        run: pip-audit -r requirements.txt --ignore-vuln PYSEC-2022-42974
+
+  # ─── Python tests ───────────────────────────────────────────────────────────
+  python-test:
+    name: Python tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest --cov --cov-fail-under=80
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          REDIS_URL: redis://localhost:6379/0
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+          JWT_SECRET_KEY: ci-secret
+          JWT_ALGORITHM: HS256
+          MODEL_CONFIDENCE_THRESHOLD: "0.85"
+
+  # ─── TypeScript lint ────────────────────────────────────────────────────────
+  ts-lint:
+    name: TypeScript lint (tsc + eslint + prettier)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript type-check
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npm run lint
+
+      - name: Prettier check
+        run: npm run format:check
+
+      - name: npm audit (high + critical)
+        run: npm audit --audit-level=high
+
+  # ─── Frontend tests ─────────────────────────────────────────────────────────
+  ts-test:
+    name: Frontend tests (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test:coverage
+
+  # ─── Docker build + image security scans ────────────────────────────────────
+  docker-build:
+    name: Docker build (API + Dashboard + Inference)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: api/Dockerfile
+          push: false
+          tags: pii-ghost-hunter/api:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Build Dashboard image
+        uses: docker/build-push-action@v5
+        with:
+          context: dashboard
+          file: dashboard/Dockerfile.dev
+          push: false
+          tags: pii-ghost-hunter/dashboard:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Build PII Inference image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ml/inference/Dockerfile
+          push: false
+          tags: pii-ghost-hunter/pii-inference:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Trivy scan — API image (CRITICAL + HIGH)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pii-ghost-hunter/api:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Trivy scan — Dashboard image (CRITICAL + HIGH)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pii-ghost-hunter/dashboard:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL,HIGH
+
+      - name: Trivy scan — PII Inference image (CRITICAL)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: pii-ghost-hunter/pii-inference:ci
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          severity: CRITICAL
+
+  # ─── Integration tests (on push to main + nightly) ──────────────────────────
+  integration-test:
+    name: Integration tests (scanner pipeline)
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run integration tests
+        run: pytest -m integration tests/integration/ -v --no-cov
+        env:
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+          KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+          JWT_SECRET_KEY: ci-secret
+          JWT_ALGORITHM: HS256
+          MODEL_CONFIDENCE_THRESHOLD: "0.85"
+
+  # ─── Nightly E2E tests (ghost-data lifecycle) ────────────────────────────────
+  e2e-test:
+    name: E2E tests — ghost-data lifecycle (nightly)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run E2E tests (requires Docker for testcontainers)
+        run: pytest -m integration tests/e2e/ -v --no-cov
+        env:
+          JWT_SECRET_KEY: ci-secret
+          JWT_ALGORITHM: HS256
+          MODEL_CONFIDENCE_THRESHOLD: "0.85"
+          # testcontainers will spin up PostgreSQL via Docker
+          DOCKER_HOST: unix:///var/run/docker.sock

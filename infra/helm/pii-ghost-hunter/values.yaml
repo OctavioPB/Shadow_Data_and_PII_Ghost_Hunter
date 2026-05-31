@@ -1,0 +1,167 @@
+global:
+  imageRegistry: ""        # override with ECR registry in environment values
+  imagePullSecrets: []
+  namespace: pii-ghost-hunter
+
+# ─── API ──────────────────────────────────────────────────────────────────────
+api:
+  replicaCount: 2
+
+  image:
+    repository: pii-ghost-hunter/api
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8000
+
+  ingress:
+    enabled: true
+    className: alb
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/healthcheck-path: /health
+    hosts:
+      - host: api.piidetect.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      enabled: false        # set certificateArn in environment values
+      certificateArn: ""
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilizationPercentage: 70
+
+  env:
+    JWT_ALGORITHM: HS256
+    MODEL_CONFIDENCE_THRESHOLD: "0.85"
+
+  # Secrets injected from Kubernetes Secret (created externally)
+  secretName: pii-gh-api-secrets
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 15
+    periodSeconds: 20
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+# ─── Dashboard ────────────────────────────────────────────────────────────────
+dashboard:
+  replicaCount: 2
+
+  image:
+    repository: pii-ghost-hunter/dashboard
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  ingress:
+    enabled: true
+    className: alb
+    annotations:
+      kubernetes.io/ingress.class: alb
+      alb.ingress.kubernetes.io/scheme: internet-facing
+      alb.ingress.kubernetes.io/target-type: ip
+    hosts:
+      - host: dashboard.piidetect.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      enabled: false
+      certificateArn: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 80
+
+# ─── PII Inference ────────────────────────────────────────────────────────────
+inference:
+  replicaCount: 2
+
+  image:
+    repository: pii-ghost-hunter/pii-inference
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8001
+
+  resources:
+    requests:
+      cpu: 1000m
+      memory: 4Gi
+    limits:
+      cpu: 4000m
+      memory: 8Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 60
+
+  env:
+    MODEL_CONFIDENCE_THRESHOLD: "0.85"
+
+  secretName: pii-gh-inference-secrets
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8001
+    initialDelaySeconds: 60   # model load takes time
+    periodSeconds: 30
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8001
+    initialDelaySeconds: 30
+    periodSeconds: 10
+
+# ─── Monitoring ───────────────────────────────────────────────────────────────
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+  prometheusRule:
+    enabled: true

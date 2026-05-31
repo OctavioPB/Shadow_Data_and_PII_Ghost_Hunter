@@ -1,0 +1,62 @@
+# Production Service — selector follows activeSlot value.
+# To shift traffic: helm upgrade ... --set activeSlot=green
+apiVersion: v1
+kind: Service
+metadata:
+  name: pii-inference
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: pii-inference
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    deployment/active-slot: {{ .Values.activeSlot }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: pii-inference
+    slot: {{ .Values.activeSlot }}
+---
+# Preview Service for blue — used for smoke-testing the inactive slot before cutover
+apiVersion: v1
+kind: Service
+metadata:
+  name: pii-inference-blue-preview
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: pii-inference
+    slot: blue
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: pii-inference
+    slot: blue
+---
+# Preview Service for green
+apiVersion: v1
+kind: Service
+metadata:
+  name: pii-inference-green-preview
+  namespace: {{ .Values.namespace }}
+  labels:
+    app.kubernetes.io/name: pii-inference
+    slot: green
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: pii-inference
+    slot: green

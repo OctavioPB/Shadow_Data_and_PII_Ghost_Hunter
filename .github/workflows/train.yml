@@ -1,0 +1,310 @@
+name: ML Training Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      samples_per_label:
+        description: "Training samples per PII label"
+        required: false
+        default: "10000"
+      epochs:
+        description: "Number of training epochs"
+        required: false
+        default: "5"
+      version_tag:
+        description: "Model version tag (e.g. v1.2.0)"
+        required: false
+        default: ""
+  schedule:
+    # Every Monday at 02:00 UTC
+    - cron: "0 2 * * 1"
+
+env:
+  PYTHON_VERSION: "3.11"
+  MODEL_BASE: "distilbert-base-multilingual-cased"
+  DATA_DIR: ml/data/labeled
+  MODEL_DIR: ml/models/pii-classifier
+  REPORT_DIR: ml/reports
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  generate:
+    name: Generate Synthetic Dataset
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install faker==24.9.0
+
+      - name: Generate dataset with splits
+        run: |
+          python -m ml.data.synthetic_generator \
+            --out-dir ${{ env.DATA_DIR }} \
+            --samples ${{ github.event.inputs.samples_per_label || '10000' }} \
+            --split
+
+      - name: Upload dataset artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pii-dataset
+          path: ${{ env.DATA_DIR }}
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────────────
+  train:
+    name: Fine-tune DistilBERT
+    runs-on: ubuntu-latest
+    needs: generate
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install ML dependencies
+        run: |
+          pip install \
+            torch==2.3.0+cpu \
+            transformers==4.41.0 \
+            mlflow==2.13.0 \
+            scikit-learn==1.4.2 \
+            pandas==2.2.2 \
+            pyarrow==16.1.0 \
+            faker==24.9.0
+          pip install -e . --no-deps
+
+      - name: Download dataset artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pii-dataset
+          path: ${{ env.DATA_DIR }}
+
+      - name: Resolve model version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version_tag }}" ]; then
+            echo "tag=${{ github.event.inputs.version_tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v$(date +'%Y%m%d')-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Start MLflow server (ephemeral)
+        run: |
+          mkdir -p /tmp/mlruns
+          mlflow server \
+            --backend-store-uri sqlite:///tmp/mlflow.db \
+            --default-artifact-root /tmp/mlruns \
+            --host 127.0.0.1 \
+            --port 5000 &
+          sleep 5
+
+      - name: Train model
+        env:
+          MLFLOW_TRACKING_URI: http://127.0.0.1:5000
+        run: |
+          python -m ml.training.train \
+            --data-dir ${{ env.DATA_DIR }} \
+            --output-dir ${{ env.MODEL_DIR }} \
+            --mlflow-uri $MLFLOW_TRACKING_URI \
+            --model-base ${{ env.MODEL_BASE }} \
+            --epochs ${{ github.event.inputs.epochs || '5' }} \
+            --batch-size 32
+
+      - name: Upload model artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pii-model-${{ steps.version.outputs.tag }}
+          path: ${{ env.MODEL_DIR }}
+          retention-days: 30
+
+      - name: Export version tag
+        run: echo "${{ steps.version.outputs.tag }}" > .model_version
+
+      - name: Upload version file
+        uses: actions/upload-artifact@v4
+        with:
+          name: model-version
+          path: .model_version
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────────────
+  evaluate:
+    name: Evaluate Model & Generate Report
+    runs-on: ubuntu-latest
+    needs: train
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install ML dependencies
+        run: |
+          pip install \
+            torch==2.3.0+cpu \
+            transformers==4.41.0 \
+            scikit-learn==1.4.2 \
+            faker==24.9.0
+          pip install -e . --no-deps
+
+      - name: Download dataset artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pii-dataset
+          path: ${{ env.DATA_DIR }}
+
+      - name: Download model version
+        uses: actions/download-artifact@v4
+        with:
+          name: model-version
+          path: .
+
+      - name: Restore model version variable
+        id: version
+        run: echo "tag=$(cat .model_version)" >> $GITHUB_OUTPUT
+
+      - name: Download model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pii-model-${{ steps.version.outputs.tag }}
+          path: ${{ env.MODEL_DIR }}
+
+      - name: Run evaluation
+        run: |
+          python -m ml.training.evaluate \
+            --model-dir ${{ env.MODEL_DIR }} \
+            --test-data ${{ env.DATA_DIR }}/test.jsonl \
+            --report-dir ${{ env.REPORT_DIR }} \
+            --threshold 0.85
+
+      - name: Upload evaluation report
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-${{ steps.version.outputs.tag }}
+          path: ${{ env.REPORT_DIR }}/latest.json
+          retention-days: 90
+
+      - name: Check evaluation gate
+        run: |
+          python - <<'EOF'
+          import json, sys
+          report = json.load(open("ml/reports/latest.json"))
+          passed = report.get("passed", False)
+          macro_f1 = report["test_split_evaluation"]["macro_f1"]
+          fixture_acc = report["fixture_evaluation"]["fixture_accuracy"]
+          print(f"Macro F1:        {macro_f1:.4f}  (target >= 0.90)")
+          print(f"Fixture accuracy:{fixture_acc:.4f}  (target >= 0.95)")
+          print(f"Passed:          {passed}")
+          if not passed:
+              print("FAIL: evaluation gate not met — aborting publish step")
+              sys.exit(1)
+          EOF
+
+      - name: Post evaluation report as PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('ml/reports/latest.json'));
+            const f1 = report.test_split_evaluation.macro_f1.toFixed(4);
+            const acc = report.test_split_evaluation.accuracy.toFixed(4);
+            const fix = report.fixture_evaluation.fixture_accuracy.toFixed(4);
+            const passed = report.passed ? '✅ PASSED' : '❌ FAILED';
+            const body = [
+              `## ML Evaluation Report — ${report.evaluated_at}`,
+              `| Metric | Value |`,
+              `|--------|-------|`,
+              `| Macro F1 | ${f1} |`,
+              `| Accuracy | ${acc} |`,
+              `| Fixture accuracy | ${fix} |`,
+              `| Gate | ${passed} |`,
+              '',
+              '<details><summary>Per-class F1 scores</summary>',
+              '',
+              '| Class | Precision | Recall | F1 |',
+              '|-------|-----------|--------|----|',
+              ...Object.entries(report.test_split_evaluation.per_class)
+                .filter(([k]) => !['accuracy','macro avg','weighted avg'].includes(k))
+                .map(([k, v]) =>
+                  `| ${k} | ${v.precision.toFixed(3)} | ${v.recall.toFixed(3)} | ${v['f1-score'].toFixed(3)} |`
+                ),
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+  # ──────────────────────────────────────────────────────────────────────────
+  publish:
+    name: Publish Model to S3 + Registry
+    runs-on: ubuntu-latest
+    needs: evaluate
+    environment: production
+    if: success()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install boto3==1.34.101 sqlalchemy==2.0.30 psycopg2-binary==2.9.9
+
+      - name: Download model version
+        uses: actions/download-artifact@v4
+        with:
+          name: model-version
+          path: .
+
+      - name: Restore model version variable
+        id: version
+        run: echo "tag=$(cat .model_version)" >> $GITHUB_OUTPUT
+
+      - name: Download model artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: pii-model-${{ steps.version.outputs.tag }}
+          path: ${{ env.MODEL_DIR }}
+
+      - name: Download evaluation report
+        uses: actions/download-artifact@v4
+        with:
+          name: eval-report-${{ steps.version.outputs.tag }}
+          path: ${{ env.REPORT_DIR }}
+
+      - name: Rename report to latest.json
+        run: mv "${{ env.REPORT_DIR }}"/*.json "${{ env.REPORT_DIR }}/latest.json" 2>/dev/null || true
+
+      - name: Publish model
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          S3_MODELS_BUCKET: ${{ secrets.S3_MODELS_BUCKET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -m ml.training.publish \
+            --model-dir ${{ env.MODEL_DIR }} \
+            --report    ${{ env.REPORT_DIR }}/latest.json \
+            --version   ${{ steps.version.outputs.tag }} \
+            --status    candidate

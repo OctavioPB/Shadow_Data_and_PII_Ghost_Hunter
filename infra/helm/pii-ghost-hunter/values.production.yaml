@@ -1,0 +1,52 @@
+# Production overrides — merged on top of values.yaml during production deploys.
+# Apply with: helm upgrade ... -f values.yaml -f values.production.yaml
+
+global:
+  imageRegistry: "123456789012.dkr.ecr.us-east-1.amazonaws.com"
+
+api:
+  replicaCount: 3
+  ingress:
+    hosts:
+      - host: api.piidetect.yourcompany.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      enabled: true
+      certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 12
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+dashboard:
+  replicaCount: 2
+  ingress:
+    hosts:
+      - host: dashboard.piidetect.yourcompany.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      enabled: true
+      certificateArn: "arn:aws:acm:us-east-1:123456789012:certificate/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+inference:
+  replicaCount: 3
+  autoscaling:
+    minReplicas: 3
+    maxReplicas: 16
+  resources:
+    requests:
+      cpu: 2000m
+      memory: 8Gi
+    limits:
+      cpu: 8000m
+      memory: 16Gi

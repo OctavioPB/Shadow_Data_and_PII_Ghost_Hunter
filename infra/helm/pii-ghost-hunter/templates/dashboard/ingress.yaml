@@ -1,0 +1,36 @@
+{{- if .Values.dashboard.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pii-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: pii-dashboard
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    {{- toYaml .Values.dashboard.ingress.annotations | nindent 4 }}
+    {{- if .Values.dashboard.ingress.tls.enabled }}
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.dashboard.ingress.tls.certificateArn }}
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.dashboard.ingress.className }}
+  {{- with .Values.dashboard.ingress.hosts }}
+  rules:
+    {{- range . }}
+    - host: {{ .host }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: pii-dashboard
+                port:
+                  number: {{ $.Values.dashboard.service.port }}
+          {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}

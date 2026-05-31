@@ -1,0 +1,26 @@
+{
+  "type": "record",
+  "name": "PIICandidate",
+  "namespace": "com.pii_ghost_hunter.scanner",
+  "doc": "Enriched event published to pii.candidates after metadata scanning",
+  "fields": [
+    {"name": "event_id",              "type": "string"},
+    {"name": "source_event_id",       "type": "string"},
+    {"name": "source_name",           "type": "string"},
+    {
+      "name": "data_source_type",
+      "type": {
+        "type": "enum",
+        "name": "DataSourceType",
+        "symbols": ["athena", "glue", "s3_parquet", "s3_csv", "s3_json", "unknown"]
+      }
+    },
+    {"name": "estimated_column_count","type": "int",            "default": 0},
+    {"name": "owner_email",           "type": ["null", "string"], "default": null},
+    {"name": "bucket",                "type": ["null", "string"], "default": null},
+    {"name": "file_format",           "type": ["null", "string"], "default": null},
+    {"name": "estimated_row_count",   "type": ["null", "long"],   "default": null},
+    {"name": "enqueued_at",           "type": "string",
+     "doc": "ISO-8601 UTC timestamp"}
+  ]
+}

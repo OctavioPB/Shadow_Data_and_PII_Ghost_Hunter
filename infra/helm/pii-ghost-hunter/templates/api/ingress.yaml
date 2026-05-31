@@ -1,0 +1,36 @@
+{{- if .Values.api.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pii-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: pii-api
+    app.kubernetes.io/instance: {{ .Release.Name }}
+  annotations:
+    {{- toYaml .Values.api.ingress.annotations | nindent 4 }}
+    {{- if .Values.api.ingress.tls.enabled }}
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.api.ingress.tls.certificateArn }}
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS": 443}]'
+    {{- end }}
+spec:
+  ingressClassName: {{ .Values.api.ingress.className }}
+  {{- with .Values.api.ingress.hosts }}
+  rules:
+    {{- range . }}
+    - host: {{ .host }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: pii-api
+                port:
+                  number: {{ $.Values.api.service.port }}
+          {{- end }}
+    {{- end }}
+  {{- end }}
+{{- end }}

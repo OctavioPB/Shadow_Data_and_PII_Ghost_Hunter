@@ -1,0 +1,15 @@
+apiVersion: v2
+name: pii-ghost-hunter
+description: Shadow Data & PII Ghost-Hunter — full-stack Helm umbrella chart
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - pii
+  - gdpr
+  - data-governance
+  - privacy
+home: https://github.com/your-org/pii-ghost-hunter
+maintainers:
+  - name: Platform Engineering
+    email: platform@company.com

@@ -1,0 +1,158 @@
+{
+  "title": "PII Ghost-Hunter — Patrol & Sampling Alerts",
+  "uid": "pii-patrol-alerts",
+  "tags": ["pii", "patrol", "alerts"],
+  "timezone": "utc",
+  "schemaVersion": 38,
+  "refresh": "60s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Patrol DAG — Consecutive Failures",
+      "description": "Alert fires when patrol_new_tables fails 2 consecutive runs",
+      "gridPos": { "x": 0, "y": 0, "w": 8, "h": 4 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 2 }
+            ]
+          },
+          "unit": "short",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "OK", "color": "green" } } }
+          ]
+        }
+      },
+      "targets": [
+        {
+          "expr": "airflow_dag_runs_total{dag_id=\"patrol_new_tables\",status=\"failure\"}",
+          "legendFormat": "failures"
+        }
+      ],
+      "alert": {
+        "name": "Patrol DAG consecutive failures",
+        "message": "patrol_new_tables has failed — PII scanning is degraded",
+        "conditions": [
+          {
+            "type": "query",
+            "query": { "params": ["A", "10m", "now"] },
+            "reducer": { "type": "sum" },
+            "evaluator": { "type": "gt", "params": [1] }
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "10m",
+        "frequency": "5m",
+        "noDataState": "no_data"
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Sampling DAG — Success Rate (1h)",
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 4 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red",    "value": null },
+              { "color": "orange", "value": 0.8 },
+              { "color": "green",  "value": 0.95 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "airflow_dag_runs_total{dag_id=\"sampling_pipeline\",status=\"success\"} / ignoring(status) sum without(status)(airflow_dag_runs_total{dag_id=\"sampling_pipeline\"})",
+          "legendFormat": "success rate"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Sampling Duration p95 (min)",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 4 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green",  "value": null },
+              { "color": "orange", "value": 5 },
+              { "color": "red",    "value": 10 }
+            ]
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(airflow_sampling_duration_seconds_bucket[30m])) by (le)) / 60",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "DAG Run Outcomes Over Time",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "unit": "short", "custom": { "lineWidth": 2 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "failure" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#E03448", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "success" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#27B97C", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "sum by (dag_id, status) (rate(airflow_dag_runs_total[5m])) * 300",
+          "legendFormat": "{{dag_id}} / {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Sampling Duration by Source Type",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "lineWidth": 2 } }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(airflow_sampling_duration_seconds_bucket[5m])) by (le, data_source_type))",
+          "legendFormat": "{{data_source_type}} p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(airflow_sampling_duration_seconds_bucket[5m])) by (le, data_source_type))",
+          "legendFormat": "{{data_source_type}} p95"
+        }
+      ]
+    }
+  ]
+}

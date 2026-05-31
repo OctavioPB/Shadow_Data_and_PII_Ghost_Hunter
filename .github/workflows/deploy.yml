@@ -1,0 +1,244 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        default: staging
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false   # never interrupt an in-flight deploy
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+  AWS_REGION: us-east-1
+  ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  # ─── Determine target environment ────────────────────────────────────────────
+  set-env:
+    name: Set target environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+  # ─── Build & push images to ECR ──────────────────────────────────────────────
+  build-push:
+    name: Build & push images
+    runs-on: ubuntu-latest
+    needs: set-env
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push API
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: api/Dockerfile
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/pii-ghost-hunter/api:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/pii-ghost-hunter/api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push Dashboard
+        uses: docker/build-push-action@v5
+        with:
+          context: dashboard
+          file: dashboard/Dockerfile
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/pii-ghost-hunter/dashboard:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/pii-ghost-hunter/dashboard:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push PII Inference
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ml/inference/Dockerfile
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/pii-ghost-hunter/pii-inference:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/pii-ghost-hunter/pii-inference:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── Terraform plan (staging always, production requires approval) ───────────
+  terraform-plan:
+    name: Terraform plan (${{ needs.set-env.outputs.environment }})
+    runs-on: ubuntu-latest
+    needs: [set-env, build-push]
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform init
+        run: terraform init
+
+      - name: Terraform plan
+        run: |
+          terraform plan \
+            -var="environment=${{ needs.set-env.outputs.environment }}" \
+            -var="rds_password=${{ secrets.RDS_PASSWORD }}" \
+            -out=tfplan
+        env:
+          TF_VAR_root_domain: ${{ secrets.ROOT_DOMAIN }}
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ needs.set-env.outputs.environment }}
+          path: infra/terraform/tfplan
+          retention-days: 1
+
+  # ─── Deploy to staging (automatic) ──────────────────────────────────────────
+  deploy-staging:
+    name: Deploy → staging
+    runs-on: ubuntu-latest
+    needs: [set-env, build-push, terraform-plan]
+    if: needs.set-env.outputs.environment == 'staging'
+    environment: staging
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-staging
+          path: infra/terraform/
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform apply (staging)
+        working-directory: infra/terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name pii-ghost-hunter-staging
+
+      - name: Helm upgrade — umbrella chart (staging)
+        run: |
+          helm upgrade --install pii-ghost-hunter infra/helm/pii-ghost-hunter \
+            --namespace pii-ghost-hunter --create-namespace \
+            -f infra/helm/pii-ghost-hunter/values.yaml \
+            -f infra/helm/pii-ghost-hunter/values.staging.yaml \
+            --set api.image.tag=${{ github.sha }} \
+            --set dashboard.image.tag=${{ github.sha }} \
+            --set inference.image.tag=${{ github.sha }} \
+            --wait --timeout 10m
+
+      - name: Run smoke tests
+        run: |
+          API_URL=$(kubectl get ingress pii-api -n pii-ghost-hunter -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          curl -sf "https://${API_URL}/health" || exit 1
+
+  # ─── Deploy to production (requires approval) ────────────────────────────────
+  deploy-production:
+    name: Deploy → production
+    runs-on: ubuntu-latest
+    needs: [set-env, build-push, terraform-plan]
+    if: needs.set-env.outputs.environment == 'production'
+    environment: production   # requires GitHub environment protection rule approval
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download Terraform plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-production
+          path: infra/terraform/
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+
+      - name: Terraform apply (production)
+        working-directory: infra/terraform
+        run: terraform apply -auto-approve tfplan
+
+      - name: Update kubeconfig
+        run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name pii-ghost-hunter-production
+
+      - name: Helm upgrade — umbrella chart (production)
+        run: |
+          helm upgrade --install pii-ghost-hunter infra/helm/pii-ghost-hunter \
+            --namespace pii-ghost-hunter --create-namespace \
+            -f infra/helm/pii-ghost-hunter/values.yaml \
+            -f infra/helm/pii-ghost-hunter/values.production.yaml \
+            --set api.image.tag=${{ github.sha }} \
+            --set dashboard.image.tag=${{ github.sha }} \
+            --set inference.image.tag=${{ github.sha }} \
+            --wait --timeout 15m
+
+      - name: Run smoke tests (production)
+        run: |
+          API_URL=$(kubectl get ingress pii-api -n pii-ghost-hunter -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          curl -sf "https://${API_URL}/health" || exit 1

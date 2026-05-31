@@ -1,0 +1,150 @@
+# PagerDuty alert routing — applied via Alertmanager config.
+#
+# These Prometheus alerting rules are the source; the Alertmanager routes them
+# to PagerDuty using the PD_SERVICE_KEY secret in the alertmanager Secret.
+#
+# Deploy: kubectl apply -f infra/alerting/pagerduty-alerts.yaml -n monitoring
+#
+# Severity routing:
+#   critical  → PagerDuty (immediate page, 24/7)
+#   warning   → PagerDuty (low-urgency during business hours)
+
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: pii-ghost-hunter-pagerduty-alerts
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    # ─── SLA alerts ─────────────────────────────────────────────────────────────
+    - name: sla.critical
+      rules:
+        - alert: PIIAPIDown
+          expr: up{job="pii-api"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+            pagerduty_service: pii-ghost-hunter-api
+          annotations:
+            summary: "[CRITICAL] PII API is unreachable"
+            description: "The FastAPI backend has been down for >2 minutes. Dashboard users cannot access any data."
+            runbook: "https://github.com/your-org/pii-ghost-hunter/blob/main/docs/runbooks/patrol-dag-failure.md"
+
+        - alert: PIIInferenceDown
+          expr: up{job="pii-inference"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+            pagerduty_service: pii-ghost-hunter-inference
+          annotations:
+            summary: "[CRITICAL] PII Inference service is unreachable"
+            description: "Classification pipeline halted — new tables will not be classified until restored."
+            runbook: "https://github.com/your-org/pii-ghost-hunter/blob/main/docs/runbooks/inference-service-down.md"
+
+        - alert: PIIAPILatencySLABreach
+          expr: |
+            histogram_quantile(0.95,
+              rate(http_request_duration_seconds_bucket{job="pii-api"}[10m])
+            ) > 0.5
+          for: 10m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "[CRITICAL] PII API p95 latency > 500ms SLA for 10 minutes"
+            description: "p95={{ $value | humanizeDuration }}. SLA is 500ms."
+
+        - alert: PIIInferenceLatencySLABreach
+          expr: |
+            histogram_quantile(0.95,
+              rate(http_request_duration_seconds_bucket{job="pii-inference"}[10m])
+            ) > 2.0
+          for: 10m
+          labels:
+            severity: warning
+            team: ml
+          annotations:
+            summary: "[WARNING] PII Inference p95 latency > 2s SLA"
+            description: "p95={{ $value | humanizeDuration }}. SLA is 2s. Classification pipeline is slow."
+
+    # ─── Pipeline alerts ─────────────────────────────────────────────────────────
+    - name: pipeline.critical
+      rules:
+        - alert: PatrolDAGConsecutiveFailures
+          expr: |
+            increase(airflow_dag_run_failed_total{dag_id="patrol_new_tables"}[48h]) >= 2
+          for: 0m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "[CRITICAL] Patrol DAG failed 2+ times in 48h"
+            description: "Ghost-table detection has stopped. Tables created in the last 48h have not been scanned."
+            runbook: "https://github.com/your-org/pii-ghost-hunter/blob/main/docs/runbooks/patrol-dag-failure.md"
+
+        - alert: KafkaConsumerLagHigh
+          expr: |
+            kafka_consumer_group_lag{topic="pii.candidates"} > 50000
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "[WARNING] Kafka pii.candidates consumer lag > 50k"
+            description: "Lag={{ $value }}. Detection latency is increasing."
+            runbook: "https://github.com/your-org/pii-ghost-hunter/blob/main/docs/runbooks/kafka-consumer-lag-spike.md"
+
+        - alert: KafkaConsumerLagCritical
+          expr: |
+            kafka_consumer_group_lag{topic="pii.candidates"} > 200000
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "[CRITICAL] Kafka pii.candidates consumer lag > 200k — SLA breach imminent"
+            runbook: "https://github.com/your-org/pii-ghost-hunter/blob/main/docs/runbooks/kafka-consumer-lag-spike.md"
+
+    # ─── Storage alerts ──────────────────────────────────────────────────────────
+    - name: storage.warning
+      rules:
+        - alert: QuarantineBucketNearCapacity
+          expr: |
+            aws_s3_bucket_size_bytes{bucket_name=~"pii-quarantine.*"} > 4.29e+11
+          for: 30m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "[WARNING] Quarantine S3 bucket > 400GB"
+            description: "Quarantine bucket is accumulating data faster than the 30-day expiry removes it."
+            runbook: "https://github.com/your-org/pii-ghost-hunter/blob/main/docs/runbooks/quarantine-bucket-full.md"
+
+    # ─── Security alerts ─────────────────────────────────────────────────────────
+    - name: security.critical
+      rules:
+        - alert: PIIAuthRateLimitSpike
+          expr: |
+            rate(http_requests_total{job="pii-api",path="/api/v1/auth/token",status="429"}[5m]) > 1
+          for: 5m
+          labels:
+            severity: warning
+            team: security
+          annotations:
+            summary: "[WARNING] Auth rate limiting triggered repeatedly — possible credential stuffing"
+            description: "More than 1 HTTP 429 per second on the auth endpoint for 5 minutes."
+
+        - alert: PIIUnauthorizedAccessSpike
+          expr: |
+            rate(http_requests_total{job="pii-api",status="401"}[5m]) > 2
+          for: 5m
+          labels:
+            severity: warning
+            team: security
+          annotations:
+            summary: "[WARNING] Spike in 401 Unauthorized responses — possible scanning/probing"

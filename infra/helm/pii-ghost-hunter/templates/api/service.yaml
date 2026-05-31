@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pii-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: pii-api
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  type: {{ .Values.api.service.type }}
+  ports:
+    - port: {{ .Values.api.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app.kubernetes.io/name: pii-api
