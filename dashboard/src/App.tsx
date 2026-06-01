@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuthStore } from './store/authStore';
 import { useLogin } from './hooks/useAuth';
+import { useDemoSeed } from './hooks/useDemo';
 import { useRisks, useStatsSummary, type RiskFilters } from './hooks/useRiskInventory';
 import { usePIIReport, useRemediate, type RemediateRequest } from './hooks/usePIIReport';
 import { useAuditLog, exportAuditLog, type AuditFilters } from './hooks/useAuditLog';
@@ -12,6 +13,9 @@ const CSS_VARS = `
   @keyframes shimmer {
     0%   { background-position: -200% 0; }
     100% { background-position:  200% 0; }
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
   :root {
     --primary:    #003366;
@@ -31,9 +35,19 @@ const CSS_VARS = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #F4F6F9; font-family: 'Plus Jakarta Sans', sans-serif; }
   input, select, button { font-family: 'Plus Jakarta Sans', sans-serif; }
+  nav button {
+    -webkit-appearance: none;
+    appearance: none;
+    background-color: transparent;
+  }
+  nav button:hover, nav button:focus, nav button:active, nav button:focus-visible {
+    outline: none;
+    background-color: transparent;
+    -webkit-tap-highlight-color: transparent;
+  }
 `;
 
-type Page = 'dashboard' | 'pii-report' | 'audit' | 'data-sources';
+type Page = 'dashboard' | 'pii-report' | 'audit' | 'data-sources' | 'info';
 
 // ─── Shared components ────────────────────────────────────────────────────────
 
@@ -558,6 +572,7 @@ function Nav({
     { id: 'dashboard', label: 'Risk Inventory' },
     { id: 'audit', label: 'Audit Log' },
     { id: 'data-sources', label: 'Data Sources' },
+    { id: 'info', label: 'Info' },
   ];
 
   return (
@@ -576,41 +591,42 @@ function Nav({
         justifyContent: 'space-between',
       }}
     >
-      <span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span>
+          <span
+            style={{
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontSize: '20px',
+              fontWeight: 300,
+              color: '#ffffff',
+            }}
+          >
+            O
+          </span>
+          <em
+            style={{
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontSize: '20px',
+              fontWeight: 300,
+              fontStyle: 'italic',
+              color: 'var(--gold-light)',
+            }}
+          >
+            PB
+          </em>
+        </span>
         <span
           style={{
-            fontFamily: "'Fraunces', Georgia, serif",
-            fontSize: '20px',
-            fontWeight: 300,
-            color: '#ffffff',
+            fontSize: 9,
+            letterSpacing: '3px',
+            textTransform: 'uppercase',
+            color: 'rgba(255,255,255,.4)',
+            fontFamily: 'var(--fb)',
           }}
         >
-          O
+          PII Ghost-Hunter
         </span>
-        <em
-          style={{
-            fontFamily: "'Fraunces', Georgia, serif",
-            fontSize: '20px',
-            fontWeight: 300,
-            fontStyle: 'italic',
-            color: 'var(--gold-light)',
-          }}
-        >
-          PB
-        </em>
-      </span>
-
-      <span
-        style={{
-          fontSize: 9,
-          letterSpacing: '3px',
-          textTransform: 'uppercase',
-          color: 'rgba(255,255,255,.4)',
-          fontFamily: 'var(--fb)',
-        }}
-      >
-        PII Ghost-Hunter
-      </span>
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         {pages.map((p) => (
@@ -692,6 +708,7 @@ function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const login = useLogin();
+  const demo = useDemoSeed();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -849,7 +866,7 @@ function LoginPage() {
 
             <button
               type="submit"
-              disabled={login.isPending}
+              disabled={login.isPending || demo.isPending}
               style={{
                 marginTop: 8,
                 padding: '12px',
@@ -861,13 +878,109 @@ function LoginPage() {
                 fontSize: 13,
                 fontWeight: 600,
                 letterSpacing: '1px',
-                cursor: login.isPending ? 'not-allowed' : 'pointer',
-                opacity: login.isPending ? 0.7 : 1,
+                cursor: login.isPending || demo.isPending ? 'not-allowed' : 'pointer',
+                opacity: login.isPending || demo.isPending ? 0.7 : 1,
               }}
             >
               {login.isPending ? 'Signing in…' : 'Sign in →'}
             </button>
           </form>
+
+          {/* ── Divider ────────────────────────────────────────────────── */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              margin: '24px 0 0',
+            }}
+          >
+            <div style={{ flex: 1, height: 1, background: 'var(--primary-10)' }} />
+            <span
+              style={{
+                fontFamily: 'var(--fb)',
+                fontSize: 10,
+                letterSpacing: '2px',
+                textTransform: 'uppercase',
+                color: 'var(--mid)',
+              }}
+            >
+              or
+            </span>
+            <div style={{ flex: 1, height: 1, background: 'var(--primary-10)' }} />
+          </div>
+
+          {/* ── Demo button ────────────────────────────────────────────── */}
+          <div style={{ marginTop: 16 }}>
+            {demo.isError && (
+              <p
+                style={{
+                  fontFamily: 'var(--fb)',
+                  fontSize: 12,
+                  color: '#E03448',
+                  textAlign: 'center',
+                  marginBottom: 10,
+                }}
+              >
+                {demo.error?.message ?? 'Could not load demo. Is DEMO_MODE=true?'}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => demo.mutate()}
+              disabled={demo.isPending || login.isPending}
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: 8,
+                border: '1.5px solid var(--gold)',
+                background: demo.isPending ? 'rgba(200,152,42,0.08)' : 'transparent',
+                color: 'var(--gold)',
+                fontFamily: 'var(--fb)',
+                fontSize: 13,
+                fontWeight: 600,
+                letterSpacing: '1px',
+                cursor: demo.isPending || login.isPending ? 'not-allowed' : 'pointer',
+                opacity: demo.isPending || login.isPending ? 0.7 : 1,
+                transition: 'background 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              {demo.isPending ? (
+                <>
+                  <span
+                    style={{
+                      width: 14,
+                      height: 14,
+                      border: '2px solid var(--gold)',
+                      borderTopColor: 'transparent',
+                      borderRadius: '50%',
+                      display: 'inline-block',
+                      animation: 'spin 0.7s linear infinite',
+                    }}
+                  />
+                  Loading demo data…
+                </>
+              ) : (
+                'Try Demo →'
+              )}
+            </button>
+            <p
+              style={{
+                fontFamily: 'var(--fb)',
+                fontSize: 11,
+                color: 'var(--mid)',
+                textAlign: 'center',
+                marginTop: 8,
+                lineHeight: 1.5,
+              }}
+            >
+              Seeds 12 ghost tables across 5 data sources and signs in as DPO.
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -1788,6 +1901,1021 @@ function DataSourcesPage({ onSourceClick }: { onSourceClick: (source: string) =>
   );
 }
 
+// ─── Info Page ────────────────────────────────────────────────────────────────
+
+function InfoPage() {
+  const [view, setView] = useState<'business' | 'engineering'>('business');
+
+  const tabBar: React.CSSProperties = {
+    display: 'flex',
+    gap: 4,
+    padding: '0 48px',
+    borderBottom: '1px solid rgba(0,51,102,0.1)',
+    backgroundColor: '#fff',
+  };
+  const tab = (active: boolean): React.CSSProperties => ({
+    background: 'none',
+    border: 'none',
+    borderBottom: active ? '2px solid var(--gold)' : '2px solid transparent',
+    color: active ? 'var(--dark)' : 'var(--mid)',
+    cursor: 'pointer',
+    fontFamily: 'var(--fb)',
+    fontSize: 11,
+    fontWeight: active ? 600 : 400,
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+    padding: '14px 16px',
+    marginBottom: -1,
+    transition: 'color 0.15s',
+  });
+
+  return (
+    <>
+      <Hero
+        title="Platform"
+        italic="Overview"
+        sub="Architectural context and business rationale for the PII Ghost-Hunter platform — two lenses, same system."
+      />
+      <div style={tabBar}>
+        <button style={tab(view === 'business')} onClick={() => setView('business')}>
+          Business View
+        </button>
+        <button style={tab(view === 'engineering')} onClick={() => setView('engineering')}>
+          Engineering View
+        </button>
+      </div>
+
+      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '48px 48px 80px' }}>
+        {view === 'business' ? <BusinessView /> : <EngineeringView />}
+      </div>
+    </>
+  );
+}
+
+// ── Business View ──────────────────────────────────────────────────────────────
+
+function BusinessView() {
+  const card: React.CSSProperties = {
+    background: '#fff',
+    borderRadius: 12,
+    boxShadow: '0 1px 4px rgba(0,51,102,0.08)',
+    padding: '32px 36px',
+    marginBottom: 32,
+  };
+  const h2: React.CSSProperties = {
+    fontFamily: "'Fraunces', Georgia, serif",
+    fontSize: 26,
+    fontWeight: 300,
+    color: 'var(--dark)',
+    marginBottom: 16,
+  };
+  const h3: React.CSSProperties = {
+    fontFamily: 'var(--fb)',
+    fontSize: 12,
+    fontWeight: 600,
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+    color: 'var(--primary)',
+    marginBottom: 10,
+    marginTop: 24,
+  };
+  const p: React.CSSProperties = {
+    fontFamily: 'var(--fb)',
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 1.8,
+    marginBottom: 12,
+  };
+  const li: React.CSSProperties = {
+    fontFamily: 'var(--fb)',
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 1.75,
+    paddingLeft: 8,
+    marginBottom: 6,
+  };
+
+  const painPoints = [
+    {
+      icon: '⚠',
+      title: 'Uncontrolled data copies',
+      body:
+        'Development pipelines, analytics workloads, and backup processes routinely create copies of production tables. These copies accumulate across S3 buckets, Athena catalogs, and data lake partitions without any ownership or lifecycle policy attached to them.',
+    },
+    {
+      icon: '🔍',
+      title: 'No visibility into PII exposure',
+      body:
+        'Data governance teams have no systematic way to know which tables contain personal data. Manual audits are too slow, require specialist effort, and go stale within days as new datasets arrive.',
+    },
+    {
+      icon: '⚖',
+      title: 'Regulatory pressure without tooling',
+      body:
+        'GDPR and LGPD impose deletion, minimization, and audit obligations. Regulators expect organizations to demonstrate control over where personal data lives. Without automated scanning, responding to a Subject Access Request or a regulatory inquiry requires weeks of manual effort.',
+    },
+    {
+      icon: '🔔',
+      title: 'Late detection, reactive response',
+      body:
+        'When a data breach or a compliance audit surfaces an overlooked dataset, the remediation cycle is costly — legal review, breach notifications, and operational disruption are all avoidable if the data was never retained unmanaged in the first place.',
+    },
+  ];
+
+  const advantages = [
+    {
+      label: 'Continuous coverage',
+      detail:
+        'Every new table or file that enters the data lake is evaluated. The scanner listens to Kafka events in real-time so nothing is added without being assessed.',
+    },
+    {
+      label: 'High-confidence classification',
+      detail:
+        'A fine-tuned multilingual DistilBERT model classifies 10 PII categories with a minimum confidence threshold of 0.85 before any automated action is taken, keeping false-positive rates low.',
+    },
+    {
+      label: 'Non-invasive by design',
+      detail:
+        'Sampling jobs use read-only IAM policies and never touch production traffic. The platform observes data without modifying source systems.',
+    },
+    {
+      label: 'Immutable audit trail',
+      detail:
+        'Every detection, quarantine action, and remediation step is written to an append-only log at the database level. The log cannot be altered by any application role, satisfying Article 30 documentation requirements.',
+    },
+    {
+      label: 'DPO-centric workflow',
+      detail:
+        'When high-confidence PII is detected, the Data Protection Officer receives a structured notification containing the table name, PII categories, confidence scores, data owner, and a direct link to the dashboard action panel — no digging through logs required.',
+    },
+    {
+      label: 'Graduated remediation',
+      detail:
+        'The platform offers three resolution paths: automatic anonymization via PySpark, quarantine to a restricted S3 bucket pending DPO review, or marking a detection as a false positive to feed back into model improvement.',
+    },
+  ];
+
+  return (
+    <>
+      {/* Value proposition */}
+      <div style={card}>
+        <Eyebrow>Core Value Proposition</Eyebrow>
+        <h2 style={h2}>What the platform does</h2>
+        <p style={p}>
+          PII Ghost-Hunter is a continuous data governance platform that automatically discovers, classifies, and remediates unmanaged copies of sensitive data across cloud data infrastructure. It connects to the event stream of a data lake, identifies every new dataset that arrives, samples its contents against a trained PII classifier, and initiates a remediation workflow when personal data is found — without requiring any manual triage.
+        </p>
+        <p style={p}>
+          The intended audience is mid-to-large organizations operating cloud data platforms under GDPR or LGPD obligations, where the volume of data creation outpaces manual governance capacity. The platform is not a one-time audit tool; it runs continuously and generates a living compliance record as data moves through the organization.
+        </p>
+
+        {/* Flow diagram */}
+        <div style={{ marginTop: 28 }}>
+          <div
+            style={{
+              fontSize: 10,
+              fontFamily: 'var(--fb)',
+              letterSpacing: '2px',
+              textTransform: 'uppercase',
+              color: 'var(--mid)',
+              marginBottom: 16,
+            }}
+          >
+            End-to-end flow
+          </div>
+          <BusinessFlowDiagram />
+        </div>
+      </div>
+
+      {/* Pain points */}
+      <div style={card}>
+        <Eyebrow>Pain Points Addressed</Eyebrow>
+        <h2 style={h2}>What breaks without this</h2>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: 20,
+            marginTop: 8,
+          }}
+        >
+          {painPoints.map((pt) => (
+            <div
+              key={pt.title}
+              style={{
+                border: '1px solid rgba(0,51,102,0.1)',
+                borderRadius: 10,
+                padding: '20px 24px',
+                borderLeft: '3px solid var(--gold)',
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 22,
+                  marginBottom: 10,
+                }}
+              >
+                {pt.icon}
+              </div>
+              <div
+                style={{
+                  fontFamily: 'var(--fb)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--dark)',
+                  marginBottom: 8,
+                }}
+              >
+                {pt.title}
+              </div>
+              <div style={{ ...p, marginBottom: 0, fontSize: 13 }}>{pt.body}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Advantages */}
+      <div style={card}>
+        <Eyebrow>Platform Advantages</Eyebrow>
+        <h2 style={h2}>How it addresses those problems</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {advantages.map((a, i) => (
+            <div
+              key={a.label}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '220px 1fr',
+                gap: 24,
+                padding: '18px 0',
+                borderBottom:
+                  i < advantages.length - 1 ? '1px solid rgba(0,51,102,0.07)' : 'none',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'var(--fb)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: 'var(--primary)',
+                  paddingTop: 2,
+                }}
+              >
+                {a.label}
+              </div>
+              <div style={{ ...p, marginBottom: 0 }}>{a.detail}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Business outcomes */}
+      <div style={card}>
+        <Eyebrow>Business Outcomes</Eyebrow>
+        <h2 style={h2}>Measurable results</h2>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: 16,
+            marginTop: 8,
+          }}
+        >
+          {[
+            { metric: 'Time to detection', before: 'Weeks (manual audit)', after: 'Hours (automated scan)' },
+            { metric: 'DPO triage effort', before: 'Full dataset review', after: 'Structured notification + one-click action' },
+            { metric: 'Audit trail completeness', before: 'Inconsistent, manual', after: 'Append-only, query-ready' },
+            { metric: 'Regulatory response time', before: 'Days–weeks', after: 'Immediate export from audit log' },
+          ].map((row) => (
+            <div
+              key={row.metric}
+              style={{
+                background: 'var(--light)',
+                borderRadius: 10,
+                padding: '20px 20px',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'var(--fb)',
+                  fontSize: 10,
+                  letterSpacing: '2px',
+                  textTransform: 'uppercase',
+                  color: 'var(--mid)',
+                  marginBottom: 12,
+                }}
+              >
+                {row.metric}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    fontSize: 12,
+                    fontFamily: 'var(--fb)',
+                    color: '#7A1020',
+                  }}
+                >
+                  <span style={{ marginTop: 1, flexShrink: 0 }}>✕</span>
+                  <span>{row.before}</span>
+                </div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 8,
+                    fontSize: 12,
+                    fontFamily: 'var(--fb)',
+                    color: '#0D5C3A',
+                  }}
+                >
+                  <span style={{ marginTop: 1, flexShrink: 0 }}>✓</span>
+                  <span>{row.after}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ ...h3, marginTop: 32 }}>Who uses it</div>
+        <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
+          {[
+            ['Data Protection Officer (DPO)', 'Receives prioritized notifications, takes remediation actions, exports audit evidence for regulators.'],
+            ['Data Platform / Engineering team', 'Monitors scanner health, manages model versions, reviews false positives to improve classifier accuracy.'],
+            ['Security & Compliance Auditor', 'Queries the immutable audit log for evidence of control effectiveness, exports CSV for regulatory submissions.'],
+            ['Engineering Leadership', 'Tracks overall compliance posture via KPI dashboard — percentage remediated, open findings, trend over time.'],
+          ].map(([role, desc]) => (
+            <li key={role} style={{ ...li, display: 'grid', gridTemplateColumns: '220px 1fr', gap: 24, paddingLeft: 0, marginBottom: 10 }}>
+              <span style={{ fontWeight: 600, color: 'var(--primary)', fontSize: 13 }}>{role}</span>
+              <span>{desc}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </>
+  );
+}
+
+function BusinessFlowDiagram() {
+  const box = (label: string, sub: string, accent: string): React.ReactNode => (
+    <div
+      style={{
+        background: '#fff',
+        border: `1.5px solid ${accent}`,
+        borderRadius: 10,
+        padding: '14px 18px',
+        minWidth: 140,
+        textAlign: 'center',
+        flex: '1 1 0',
+      }}
+    >
+      <div
+        style={{
+          fontFamily: 'var(--fb)',
+          fontSize: 12,
+          fontWeight: 600,
+          color: 'var(--dark)',
+          marginBottom: 4,
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)' }}>{sub}</div>
+    </div>
+  );
+
+  const arrow = (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        color: 'var(--mid)',
+        fontSize: 18,
+        padding: '0 4px',
+        flexShrink: 0,
+      }}
+    >
+      →
+    </div>
+  );
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'stretch',
+        gap: 0,
+        flexWrap: 'wrap',
+        rowGap: 12,
+      }}
+    >
+      {box('New Dataset Arrives', 'Table created or file moved in data lake', '#99BBDD')}
+      {arrow}
+      {box('Scanner Event', 'Kafka event captured, persisted to queue', '#99BBDD')}
+      {arrow}
+      {box('Column Sampling', 'Stratified sample (max 1,000 rows/column) written to S3', '#C8982A')}
+      {arrow}
+      {box('PII Classification', 'DistilBERT model scores 10 PII categories per column', '#C8982A')}
+      {arrow}
+      {box('Confidence Gate', 'Score ≥ 0.85 triggers automated action', '#E03448')}
+      {arrow}
+      {box('Remediation', 'Anonymize, quarantine, or mark false positive — DPO notified', '#27B97C')}
+    </div>
+  );
+}
+
+// ── Engineering View ───────────────────────────────────────────────────────────
+
+function EngineeringView() {
+  const card: React.CSSProperties = {
+    background: '#fff',
+    borderRadius: 12,
+    boxShadow: '0 1px 4px rgba(0,51,102,0.08)',
+    padding: '32px 36px',
+    marginBottom: 32,
+  };
+  const h2: React.CSSProperties = {
+    fontFamily: "'Fraunces', Georgia, serif",
+    fontSize: 26,
+    fontWeight: 300,
+    color: 'var(--dark)',
+    marginBottom: 16,
+  };
+  const p: React.CSSProperties = {
+    fontFamily: 'var(--fb)',
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 1.8,
+    marginBottom: 12,
+  };
+
+  const stackRows: { layer: string; components: string[] }[] = [
+    { layer: 'Presentation', components: ['React 18 + TypeScript', 'Vite', 'TanStack Query', 'CSS-in-JS (inline styles)'] },
+    { layer: 'API Gateway', components: ['FastAPI (Python 3.11)', 'SQLAlchemy 2.0 async', 'Pydantic v2', 'JWT / OAuth2 RBAC'] },
+    { layer: 'Event Streaming', components: ['Apache Kafka 7.5', 'Confluent Schema Registry', 'Avro schemas', 'Dead-letter topic'] },
+    { layer: 'Orchestration', components: ['Apache Airflow 2.8.1', '4 DAGs (patrol, sampling, remediation, expiry)', 'Custom PIIClassifierOperator'] },
+    { layer: 'ML / Inference', components: ['DistilBERT-base-multilingual-cased', 'HuggingFace Transformers', 'PyTorch', 'MLflow (registry + tracking)'] },
+    { layer: 'Data Processing', components: ['PySpark 3.5 (anonymization)', 'AWS Athena / Glue (sampling)', 'boto3 (S3 ops)'] },
+    { layer: 'Storage', components: ['PostgreSQL 15 (primary state)', 'Redis 7 (caching)', 'S3 (staging, quarantine, model artifacts)'] },
+    { layer: 'Observability', components: ['Prometheus (metrics)', 'Grafana (dashboards)', 'Structlog (JSON logs — no PII values)'] },
+    { layer: 'Infrastructure', components: ['Docker Compose (local dev)', 'Terraform (AWS provisioning)', 'Helm + Kubernetes (production)', 'GitHub Actions (CI/CD)'] },
+  ];
+
+  const layerColors: Record<string, string> = {
+    Presentation: '#E0EAF4',
+    'API Gateway': '#D6E8D6',
+    'Event Streaming': '#FEF0E6',
+    Orchestration: '#EDE8F7',
+    'ML / Inference': '#FFF3CD',
+    'Data Processing': '#E0F7EF',
+    Storage: '#F4F6F9',
+    Observability: '#FDE8EC',
+    Infrastructure: '#E8EAF0',
+  };
+
+  const stateTransitions = [
+    { from: 'pending', to: 'queued', trigger: 'Patrol DAG picks up event' },
+    { from: 'queued', to: 'classified', trigger: 'Sampling + inference complete' },
+    { from: 'classified', to: 'flagged', trigger: 'Confidence ≥ 0.85, PII found' },
+    { from: 'classified', to: 'clean', trigger: 'No PII detected' },
+    { from: 'flagged', to: 'quarantined', trigger: 'DPO quarantine action or auto-remediation' },
+    { from: 'flagged', to: 'remediated', trigger: 'DPO anonymize action' },
+    { from: 'quarantined', to: 'remediated', trigger: 'DPO approves deletion/anonymization after review' },
+  ];
+
+  return (
+    <>
+      {/* Architecture diagram */}
+      <div style={card}>
+        <Eyebrow>System Architecture</Eyebrow>
+        <h2 style={h2}>How the system is structured</h2>
+        <p style={p}>
+          The platform is composed of five loosely coupled subsystems connected through a Kafka event bus and a shared PostgreSQL state store. Each subsystem can be deployed, scaled, and restarted independently.
+        </p>
+        <ArchitectureDiagram />
+      </div>
+
+      {/* Tech stack */}
+      <div style={card}>
+        <Eyebrow>Tech Stack</Eyebrow>
+        <h2 style={h2}>Component inventory by layer</h2>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 8 }}>
+          {stackRows.map((row) => (
+            <div
+              key={row.layer}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '160px 1fr',
+                gap: 16,
+                alignItems: 'start',
+                padding: '14px 16px',
+                borderRadius: 8,
+                background: layerColors[row.layer] ?? '#F4F6F9',
+              }}
+            >
+              <div
+                style={{
+                  fontFamily: 'var(--fb)',
+                  fontSize: 11,
+                  fontWeight: 600,
+                  color: 'var(--primary)',
+                  letterSpacing: '1px',
+                  textTransform: 'uppercase',
+                  paddingTop: 2,
+                }}
+              >
+                {row.layer}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {row.components.map((c) => (
+                  <span
+                    key={c}
+                    style={{
+                      background: 'rgba(255,255,255,0.75)',
+                      border: '1px solid rgba(0,51,102,0.12)',
+                      borderRadius: 6,
+                      padding: '3px 10px',
+                      fontFamily: 'var(--fb)',
+                      fontSize: 12,
+                      color: 'var(--dark)',
+                    }}
+                  >
+                    {c}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* End-to-end workflow */}
+      <div style={card}>
+        <Eyebrow>End-to-End Workflow</Eyebrow>
+        <h2 style={h2}>Execution path from event to remediation</h2>
+
+        {[
+          {
+            step: '01',
+            title: 'Event ingestion',
+            detail:
+              'A Kafka consumer listens to two topics: table.created (emitted by catalog systems when a new table appears in Athena or Glue) and file.moved (emitted by AWS EventBridge when objects land in designated S3 prefixes). Each event is validated against an Avro schema, persisted to the scanner_events table with status=pending, and re-published to the pii.candidates topic for downstream consumption. The consumer is idempotent — duplicate events on the same event_id are silently upserted.',
+          },
+          {
+            step: '02',
+            title: 'Patrol DAG',
+            detail:
+              'An Airflow DAG runs on a daily schedule and queries scanner_events for records created in the last 24 hours with status=pending. It issues a compare-and-swap UPDATE (pending → queued) to claim each record, avoiding double-processing across DAG retries. The DAG then triggers the sampling pipeline for each claimed event.',
+          },
+          {
+            step: '03',
+            title: 'Column sampling',
+            detail:
+              'The sampling pipeline reads the target table via AWS Athena or directly from S3 Parquet using Glue metadata. It performs stratified random sampling up to 1,000 rows per column, writes the sample as Parquet to the staging S3 bucket, and persists a column_samples record pointing to the S3 path. IAM policies on the sampling role are read-only; no production data is moved or modified.',
+          },
+          {
+            step: '04',
+            title: 'PII inference',
+            detail:
+              'The custom PIIClassifierOperator calls the inference microservice (FastAPI, port 8001) with batches of up to 50 columns. The service loads a fine-tuned DistilBERT-base-multilingual-cased model from S3 (lazy-loaded and cached in memory). For each column it returns a predicted PII category and a confidence score. Results are written to pii_findings. Prometheus counters track classification latency and throughput per request.',
+          },
+          {
+            step: '05',
+            title: 'Confidence gate',
+            detail:
+              'If any column scores ≥ 0.85 confidence, the remediation DAG is triggered automatically. Findings below the threshold are stored as classified without action, awaiting potential manual review. The 0.85 threshold was chosen empirically during evaluation against a labeled test set containing known PII fixtures (VISA PANs, Brazilian CPF numbers, US SSNs) to minimize false positives while maintaining recall above 0.90.',
+          },
+          {
+            step: '06',
+            title: 'Remediation',
+            detail:
+              'The remediation DAG runs two branches in parallel: (a) a PySpark job reads the flagged columns, applies per-category anonymization strategies (SHA-256 hash for email, last-4 masking for credit cards, full redaction for SSN/CPF, format-preserving pseudonymization for names), and writes the anonymized dataset back to S3; (b) a quarantine job moves the raw flagged data to the pii-quarantine bucket under a write-only policy, creating a quarantine_manifest record. Both branches write append-only entries to audit_log on completion.',
+          },
+          {
+            step: '07',
+            title: 'DPO notification',
+            detail:
+              'After the remediation branches complete, the DPO notifier sends a Jinja-templated email and a Slack webhook containing the table name, PII categories detected, confidence scores, data owner contact, recommended action, and a direct link to the dashboard PII Report panel. The notifier retries up to three times with exponential backoff on delivery failure.',
+          },
+          {
+            step: '08',
+            title: 'Quarantine expiry',
+            detail:
+              'A separate daily DAG checks quarantine_manifest records. Seven days before the 30-day retention window expires, it sends a reminder to the DPO. On expiry, records without an approved remediation are auto-deleted from the quarantine bucket and the manifest is updated. This implements the GDPR storage limitation principle without requiring ongoing manual review.',
+          },
+        ].map((s, i, arr) => (
+          <div
+            key={s.step}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '48px 1fr',
+              gap: 20,
+              paddingBottom: i < arr.length - 1 ? 24 : 0,
+              marginBottom: i < arr.length - 1 ? 24 : 0,
+              borderBottom: i < arr.length - 1 ? '1px solid rgba(0,51,102,0.07)' : 'none',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontSize: 28,
+                fontWeight: 300,
+                color: 'var(--primary-30)',
+                lineHeight: 1,
+                paddingTop: 4,
+              }}
+            >
+              {s.step}
+            </div>
+            <div>
+              <div
+                style={{
+                  fontFamily: 'var(--fb)',
+                  fontSize: 14,
+                  fontWeight: 600,
+                  color: 'var(--dark)',
+                  marginBottom: 8,
+                }}
+              >
+                {s.title}
+              </div>
+              <div style={{ fontFamily: 'var(--fb)', fontSize: 13, color: '#374151', lineHeight: 1.8 }}>
+                {s.detail}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* State machine */}
+      <div style={card}>
+        <Eyebrow>Data Lifecycle</Eyebrow>
+        <h2 style={h2}>Scanner event state machine</h2>
+        <p style={{ ...p, marginBottom: 24 }}>
+          Every scanner event moves through a defined set of states. State transitions are recorded in audit_log. The scanner_events table uses a compare-and-swap pattern on status updates to prevent race conditions between concurrent DAG runs.
+        </p>
+        <StateMachineDiagram states={stateTransitions} />
+      </div>
+
+      {/* Data model */}
+      <div style={card}>
+        <Eyebrow>Data Model</Eyebrow>
+        <h2 style={h2}>Core PostgreSQL tables</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+          {[
+            {
+              table: 'scanner_events',
+              purpose: 'One record per detected dataset. Tracks lifecycle from ingestion to remediation.',
+              keyFields: ['event_id (PK)', 'source_name', 'data_source_type', 'status', 'owner_email', 'raw_event JSONB'],
+            },
+            {
+              table: 'column_samples',
+              purpose: 'Metadata for each sampled column — points to S3 Parquet for the sample data.',
+              keyFields: ['table_id (FK)', 'column_name', 'sample_s3_path', 'status', 'sample_count'],
+            },
+            {
+              table: 'pii_findings',
+              purpose: 'One record per column per table. Stores the ML classification result.',
+              keyFields: ['table_id (FK)', 'column_name', 'pii_category', 'confidence', 'flagged', 'status'],
+            },
+            {
+              table: 'audit_log',
+              purpose: 'Append-only compliance trail. DB trigger prevents UPDATE and DELETE.',
+              keyFields: ['event_type', 'table_id', 'actor', 'timestamp', 'details_json JSONB'],
+            },
+            {
+              table: 'quarantine_manifest',
+              purpose: 'Tracks every quarantine action — source path, destination, review status.',
+              keyFields: ['table_id (FK)', 'source_s3_path', 'quarantine_s3_path', 'flagged_categories', 'reviewed_by'],
+            },
+            {
+              table: 'model_registry',
+              purpose: 'Versioned ML model catalog. Production inference uses the single approved model.',
+              keyFields: ['version', 's3_uri', 'macro_f1', 'weighted_f1', 'accuracy', 'status'],
+            },
+          ].map((t) => (
+            <div
+              key={t.table}
+              style={{
+                border: '1px solid rgba(0,51,102,0.12)',
+                borderRadius: 10,
+                overflow: 'hidden',
+              }}
+            >
+              <div
+                style={{
+                  background: 'var(--primary)',
+                  padding: '10px 16px',
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: 'var(--gold-light)',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                {t.table}
+              </div>
+              <div style={{ padding: '14px 16px' }}>
+                <div
+                  style={{
+                    fontFamily: 'var(--fb)',
+                    fontSize: 12,
+                    color: '#374151',
+                    lineHeight: 1.6,
+                    marginBottom: 12,
+                  }}
+                >
+                  {t.purpose}
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {t.keyFields.map((f) => (
+                    <div
+                      key={f}
+                      style={{
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: 'var(--primary-60)',
+                        background: 'var(--light)',
+                        borderRadius: 4,
+                        padding: '3px 8px',
+                        display: 'inline-block',
+                        width: 'fit-content',
+                      }}
+                    >
+                      {f}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Key design decisions */}
+      <div style={card}>
+        <Eyebrow>Design Decisions</Eyebrow>
+        <h2 style={h2}>Non-obvious architectural choices</h2>
+        {[
+          {
+            decision: 'Append-only audit log enforced at the database level',
+            rationale:
+              'A DB trigger that blocks UPDATE and DELETE on audit_log is more trustworthy than application-level enforcement. Even a compromised application role cannot alter the audit trail. This directly satisfies the immutability requirement expected by regulators reviewing GDPR Article 30 records.',
+          },
+          {
+            decision: 'Confidence threshold of 0.85 for automated action',
+            rationale:
+              'Evaluated on a labeled synthetic dataset covering VISA PANs, Brazilian CPF numbers, US SSNs, and email addresses. Below 0.85, the false-positive rate increased enough to create DPO alert fatigue. Above 0.90, recall dropped for ambiguous column names like "user_ref" containing real CPF values. 0.85 was the best balance found during evaluation.',
+          },
+          {
+            decision: 'Read-only IAM policy for sampling jobs',
+            rationale:
+              'Sampling jobs only need to read production tables to extract a statistical sample. Granting write access would expose production data to accidental modification. By using separate read-only credentials at the IAM level, even a bug in the sampling code cannot modify source data.',
+          },
+          {
+            decision: 'Kafka as the integration bus rather than polling',
+            rationale:
+              'New tables arrive asynchronously and at unpredictable rates. Polling the Glue catalog or S3 on a fixed schedule would introduce latency proportional to the poll interval and generate unnecessary API calls. Kafka event subscriptions give sub-second detection with no polling overhead.',
+          },
+          {
+            decision: 'DistilBERT instead of rule-based detection',
+            rationale:
+              'Rule-based regex classifiers fail on obfuscated column names (e.g., "field_a"), truncated values, and multilingual content. DistilBERT classifies based on the statistical distribution of values in the column sample, not column names, and handles Portuguese and English PII natively via the multilingual checkpoint.',
+          },
+          {
+            decision: 'Idempotent DAGs with compare-and-swap status updates',
+            rationale:
+              'Airflow DAGs can be re-triggered manually or automatically on failure. Without idempotency, a retry would re-sample and re-classify already-processed tables, creating duplicate findings and audit entries. The compare-and-swap UPDATE (status=pending → queued only if current value is pending) guarantees exactly-once processing across retries.',
+          },
+        ].map((d, i, arr) => (
+          <div
+            key={d.decision}
+            style={{
+              paddingBottom: i < arr.length - 1 ? 24 : 0,
+              marginBottom: i < arr.length - 1 ? 24 : 0,
+              borderBottom: i < arr.length - 1 ? '1px solid rgba(0,51,102,0.07)' : 'none',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: 'var(--fb)',
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'var(--dark)',
+                marginBottom: 8,
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+              }}
+            >
+              <span
+                style={{
+                  background: 'var(--primary)',
+                  color: 'var(--gold-light)',
+                  borderRadius: 4,
+                  padding: '1px 7px',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: '1px',
+                  flexShrink: 0,
+                  marginTop: 2,
+                }}
+              >
+                ADR
+              </span>
+              {d.decision}
+            </div>
+            <div style={{ fontFamily: 'var(--fb)', fontSize: 13, color: '#374151', lineHeight: 1.8 }}>
+              {d.rationale}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function ArchitectureDiagram() {
+  const node = (
+    label: string,
+    sub: string,
+    bg: string,
+    border: string,
+    textColor = 'var(--dark)'
+  ): React.ReactNode => (
+    <div
+      style={{
+        background: bg,
+        border: `1.5px solid ${border}`,
+        borderRadius: 10,
+        padding: '12px 16px',
+        textAlign: 'center',
+        minWidth: 130,
+        flex: '1 1 0',
+      }}
+    >
+      <div
+        style={{ fontFamily: 'var(--fb)', fontSize: 12, fontWeight: 600, color: textColor, marginBottom: 4 }}
+      >
+        {label}
+      </div>
+      <div style={{ fontFamily: 'var(--fb)', fontSize: 10, color: 'var(--mid)' }}>{sub}</div>
+    </div>
+  );
+
+  const arrow = (label = '') => (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 4px',
+        flexShrink: 0,
+        gap: 2,
+      }}
+    >
+      <div style={{ fontFamily: 'var(--fb)', fontSize: 18, color: 'var(--mid)', lineHeight: 1 }}>→</div>
+      {label && (
+        <div
+          style={{
+            fontFamily: 'var(--fb)',
+            fontSize: 9,
+            color: 'var(--mid)',
+            letterSpacing: '1px',
+            textTransform: 'uppercase',
+            textAlign: 'center',
+            maxWidth: 60,
+          }}
+        >
+          {label}
+        </div>
+      )}
+    </div>
+  );
+
+  const sectionLabel = (text: string) => (
+    <div
+      style={{
+        fontFamily: 'var(--fb)',
+        fontSize: 9,
+        letterSpacing: '2px',
+        textTransform: 'uppercase',
+        color: 'var(--mid)',
+        marginBottom: 8,
+        marginTop: 20,
+      }}
+    >
+      {text}
+    </div>
+  );
+
+  return (
+    <div>
+      {sectionLabel('Ingestion layer')}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'wrap', rowGap: 8 }}>
+        {node('Data Lake', 'S3 / Athena / Glue', '#E0EAF4', '#99BBDD')}
+        {arrow('events')}
+        {node('Kafka', 'table.created file.moved', '#FEF0E6', '#F07020')}
+        {arrow('consume')}
+        {node('Scanner Consumer', 'Python Kafka consumer', '#E0EAF4', '#336699')}
+        {arrow('persist')}
+        {node('PostgreSQL', 'scanner_events table', '#E0F7EF', '#27B97C')}
+      </div>
+
+      {sectionLabel('Processing layer')}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'wrap', rowGap: 8 }}>
+        {node('Airflow', 'Patrol + Sampling DAGs', '#EDE8F7', '#7C5CBF')}
+        {arrow('sample')}
+        {node('S3 Staging', 'Parquet column samples', '#FFF3CD', '#C8982A')}
+        {arrow('classify')}
+        {node('Inference Service', 'FastAPI + DistilBERT', '#FEF0E6', '#E03448')}
+        {arrow('results')}
+        {node('pii_findings', 'PostgreSQL table', '#E0F7EF', '#27B97C')}
+      </div>
+
+      {sectionLabel('Remediation layer')}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'wrap', rowGap: 8 }}>
+        {node('Remediation DAG', 'Airflow, confidence ≥ 0.85', '#EDE8F7', '#7C5CBF')}
+        {arrow('anonymize')}
+        {node('PySpark Job', 'Anonymization engine', '#FEF0E6', '#F07020')}
+        {arrow()}
+        {node('S3 Quarantine', 'Restricted bucket', '#FFF3CD', '#C8982A')}
+        {arrow('notify')}
+        {node('DPO / Slack / Email', 'Notification + audit log', '#E0EAF4', '#336699')}
+      </div>
+
+      {sectionLabel('API & presentation layer')}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'wrap', rowGap: 8 }}>
+        {node('FastAPI', 'REST API, JWT RBAC', '#E0EAF4', '#336699')}
+        {arrow('serve')}
+        {node('React Dashboard', 'Risk Inventory, PII Report, Audit, Sources', '#E0EAF4', '#003366')}
+      </div>
+    </div>
+  );
+}
+
+function StateMachineDiagram({
+  states,
+}: {
+  states: { from: string; to: string; trigger: string }[];
+}) {
+  const statusColors: Record<string, { bg: string; border: string; text: string }> = {
+    pending:      { bg: '#E0EAF4', border: '#336699', text: '#003366' },
+    queued:       { bg: '#EDE8F7', border: '#7C5CBF', text: '#4A2F8A' },
+    classified:   { bg: '#FFF3CD', border: '#C8982A', text: '#7A5800' },
+    flagged:      { bg: '#FDEAEA', border: '#E03448', text: '#7A1020' },
+    clean:        { bg: '#E0F7EF', border: '#27B97C', text: '#0D5C3A' },
+    quarantined:  { bg: '#FEF0E6', border: '#F07020', text: '#7A3800' },
+    remediated:   { bg: '#E0F7EF', border: '#27B97C', text: '#0D5C3A' },
+  };
+
+  const stateBox = (status: string) => {
+    const s = statusColors[status] ?? statusColors['pending'];
+    return (
+      <span
+        style={{
+          display: 'inline-block',
+          background: s.bg,
+          border: `1.5px solid ${s.border}`,
+          borderRadius: 6,
+          padding: '2px 10px',
+          fontFamily: 'monospace',
+          fontSize: 11,
+          color: s.text,
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {status}
+      </span>
+    );
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {states.map((t) => (
+        <div
+          key={`${t.from}-${t.to}`}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '120px 24px 120px 1fr',
+            alignItems: 'center',
+            gap: 12,
+            padding: '10px 16px',
+            background: 'var(--light)',
+            borderRadius: 8,
+          }}
+        >
+          {stateBox(t.from)}
+          <span style={{ color: 'var(--mid)', fontSize: 16, textAlign: 'center' }}>→</span>
+          {stateBox(t.to)}
+          <span style={{ fontFamily: 'var(--fb)', fontSize: 12, color: '#374151' }}>{t.trigger}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -1833,6 +2961,7 @@ export default function App() {
           )}
           {page === 'audit' && <AuditPage />}
           {page === 'data-sources' && <DataSourcesPage onSourceClick={handleSourceClick} />}
+          {page === 'info' && <InfoPage />}
         </main>
         <Footer />
       </div>

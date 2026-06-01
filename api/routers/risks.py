@@ -33,7 +33,7 @@ _RISK_BASE_QUERY = """
         se.bucket,
         array_agg(DISTINCT pf.pii_category)  AS pii_categories,
         max(pf.confidence)                    AS max_confidence,
-        count(*) FILTER (WHERE pf.flagged = 1) AS flagged_column_count,
+        count(*) FILTER (WHERE pf.flagged = true) AS flagged_column_count,
         max(pf.created_at)                    AS last_scanned,
         CASE
             WHEN count(*) FILTER (WHERE pf.status = 'quarantined') > 0 THEN 'quarantined'
@@ -43,7 +43,7 @@ _RISK_BASE_QUERY = """
         END AS status
     FROM pii_findings pf
     JOIN scanner_events se ON pf.scanner_event_id = se.id
-    WHERE pf.flagged = 1
+    WHERE pf.flagged = true
 """
 
 
@@ -59,7 +59,7 @@ async def list_risks(
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ) -> RisksResponse:
-    conditions = ["pf.flagged = 1"]
+    conditions = ["pf.flagged = true"]
     params: dict[str, Any] = {}
 
     if pii_category:
@@ -105,7 +105,7 @@ async def list_risks(
             se.owner_email,
             array_agg(DISTINCT pf.pii_category)            AS pii_categories,
             max(pf.confidence)                              AS max_confidence,
-            count(*) FILTER (WHERE pf.flagged = 1)         AS flagged_column_count,
+            count(*) FILTER (WHERE pf.flagged = true)         AS flagged_column_count,
             max(pf.created_at)                             AS last_scanned,
             CASE
                 WHEN count(*) FILTER (WHERE pf.status = 'quarantined') > 0 THEN 'quarantined'
@@ -115,7 +115,7 @@ async def list_risks(
             END AS status
         FROM pii_findings pf
         JOIN scanner_events se ON pf.scanner_event_id = se.id
-        WHERE pf.flagged = 1
+        WHERE pf.flagged = true
         {"AND se.source_name ILIKE :source" if source else ""}
         {"AND pf.created_at >= :date_from" if date_from else ""}
         {"AND pf.created_at <= :date_to" if date_to else ""}
@@ -130,7 +130,7 @@ async def list_risks(
             SELECT pf.table_id
             FROM pii_findings pf
             JOIN scanner_events se ON pf.scanner_event_id = se.id
-            WHERE pf.flagged = 1
+            WHERE pf.flagged = true
             {"AND se.source_name ILIKE :source" if source else ""}
             {"AND pf.created_at >= :date_from" if date_from else ""}
             {"AND pf.created_at <= :date_to" if date_to else ""}
@@ -178,10 +178,10 @@ async def stats_summary(
     result = await db.execute(
         text("""
             SELECT
-                count(DISTINCT pf.table_id) FILTER (WHERE pf.flagged = 1)             AS total_flagged,
+                count(DISTINCT pf.table_id) FILTER (WHERE pf.flagged = true)             AS total_flagged,
                 count(DISTINCT pf.table_id) FILTER (WHERE pf.status IN ('remediated', 'quarantined'))
                                                                                        AS remediated,
-                count(DISTINCT pf.table_id) FILTER (WHERE pf.flagged = 1
+                count(DISTINCT pf.table_id) FILTER (WHERE pf.flagged = true
                     AND pf.status NOT IN ('remediated', 'quarantined'))                AS pending_review
             FROM pii_findings pf
         """)
@@ -232,7 +232,7 @@ async def pii_report(
             FROM pii_findings pf
             LEFT JOIN column_samples cs
                 ON cs.table_id = pf.table_id AND cs.column_name = pf.column_name
-            WHERE pf.table_id = :tid AND pf.flagged = 1
+            WHERE pf.table_id = :tid AND pf.flagged = true
             ORDER BY pf.confidence DESC
         """),
         {"tid": table_id},
@@ -281,7 +281,7 @@ async def remediate(
     await db.execute(
         text("""
             INSERT INTO audit_log (event_type, table_id, actor, details_json)
-            VALUES (:event_type, :table_id, :actor, :details::jsonb)
+            VALUES (:event_type, :table_id, :actor, CAST(:details AS jsonb))
         """),
         {
             "event_type": f"manual_{body.action}_requested",
@@ -312,10 +312,10 @@ async def data_sources(
                 se.data_source_type,
                 se.bucket,
                 count(DISTINCT pf.table_id)                        AS table_count,
-                count(DISTINCT pf.table_id) FILTER (WHERE pf.flagged = 1) AS flagged_count,
+                count(DISTINCT pf.table_id) FILTER (WHERE pf.flagged = true) AS flagged_count,
                 max(pf.confidence)                                 AS max_confidence,
                 array_agg(DISTINCT pf.pii_category)
-                    FILTER (WHERE pf.flagged = 1)                  AS pii_categories
+                    FILTER (WHERE pf.flagged = true)                  AS pii_categories
             FROM scanner_events se
             LEFT JOIN pii_findings pf ON pf.scanner_event_id = se.id
             GROUP BY se.source_name, se.data_source_type, se.bucket
