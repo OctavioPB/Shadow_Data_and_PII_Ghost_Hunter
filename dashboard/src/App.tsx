@@ -47,7 +47,7 @@ const CSS_VARS = `
   }
 `;
 
-type Page = 'dashboard' | 'pii-report' | 'audit' | 'data-sources' | 'info';
+type Page = 'dashboard' | 'pii-report' | 'audit' | 'data-sources' | 'info' | 'compliance';
 
 // ─── Shared components ────────────────────────────────────────────────────────
 
@@ -572,6 +572,7 @@ function Nav({
     { id: 'dashboard', label: 'Risk Inventory' },
     { id: 'audit', label: 'Audit Log' },
     { id: 'data-sources', label: 'Data Sources' },
+    { id: 'compliance', label: 'Compliance' },
     { id: 'info', label: 'Info' },
   ];
 
@@ -1245,13 +1246,42 @@ function PIIReportPage({
 }) {
   const { data: report, isLoading, error } = usePIIReport(tableId);
   const remediate = useRemediate(tableId);
+  const token = useAuthStore((s) => s.token);
+  const API = (import.meta as unknown as { env: Record<string,string> }).env?.VITE_API_URL ?? 'http://localhost:8000';
 
   const [modal, setModal] = useState<{ open: boolean; action: RemediateRequest['action'] | null }>({
     open: false,
     action: null,
   });
+  const [lineage, setLineage] = useState<{ parents: LineageNode[]; children: LineageNode[] } | null>(null);
+  const [lineageLoading, setLineageLoading] = useState(false);
 
   const canRemediate = userRole === 'dpo' || userRole === 'admin';
+
+  const loadLineage = async () => {
+    setLineageLoading(true);
+    try {
+      const r = await fetch(`${API}/api/v1/tables/${tableId}/lineage`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (r.ok) setLineage(await r.json());
+    } finally {
+      setLineageLoading(false);
+    }
+  };
+
+  const inferLineage = async () => {
+    setLineageLoading(true);
+    try {
+      await fetch(`${API}/api/v1/tables/${tableId}/lineage/infer`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      await loadLineage();
+    } finally {
+      setLineageLoading(false);
+    }
+  };
 
   const handleConfirm = () => {
     if (!modal.action) return;
@@ -1479,6 +1509,80 @@ function PIIReportPage({
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* ── Lineage section ─────────────────────────────────────────────── */}
+      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '0 48px 48px' }}>
+        <div
+          style={{
+            background: '#fff',
+            borderRadius: 12,
+            boxShadow: '0 1px 4px rgba(0,51,102,0.08)',
+            padding: '28px 32px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div>
+              <Eyebrow>F-06 · Data Lineage</Eyebrow>
+              <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: 'var(--dark)' }}>
+                Table Lineage Map
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                onClick={lineage ? loadLineage : inferLineage}
+                disabled={lineageLoading}
+                style={{
+                  padding: '8px 18px', borderRadius: 8, border: '1.5px solid var(--primary)',
+                  background: 'transparent', color: 'var(--primary)', cursor: 'pointer',
+                  fontFamily: 'var(--fb)', fontSize: 12, fontWeight: 600, letterSpacing: '1px',
+                  opacity: lineageLoading ? 0.6 : 1,
+                }}
+              >
+                {lineageLoading ? 'Loading…' : lineage ? 'Refresh' : 'Infer Lineage'}
+              </button>
+            </div>
+          </div>
+
+          {!lineage && !lineageLoading && (
+            <p style={{ fontFamily: 'var(--fb)', fontSize: 13, color: 'var(--mid)', textAlign: 'center', padding: '24px 0' }}>
+              Click "Infer Lineage" to run the path-heuristic analysis and detect upstream sources and downstream copies.
+            </p>
+          )}
+
+          {lineage && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+              {(['parents', 'children'] as const).map((side) => (
+                <div key={side}>
+                  <div style={{ fontFamily: 'var(--fb)', fontSize: 10, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 12 }}>
+                    {side === 'parents' ? '↑ Upstream sources' : '↓ Downstream copies'}
+                  </div>
+                  {lineage[side].length === 0 ? (
+                    <div style={{ fontFamily: 'var(--fb)', fontSize: 13, color: 'var(--mid)', fontStyle: 'italic' }}>None detected</div>
+                  ) : (
+                    lineage[side].map((node) => (
+                      <div key={node.table_id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '10px 14px', borderRadius: 8, background: 'var(--light)',
+                        marginBottom: 8, gap: 12,
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {node.source_name || node.table_id}
+                          </div>
+                          <div style={{ fontFamily: 'var(--fb)', fontSize: 10, color: 'var(--mid)', marginTop: 2 }}>
+                            {node.inference_method.replace(/_/g, ' ')} · {Math.round(node.confidence * 100)}% confidence
+                          </div>
+                        </div>
+                        <StatusBadge status={node.status} />
+                      </div>
+                    ))
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -2916,6 +3020,579 @@ function StateMachineDiagram({
   );
 }
 
+// ─── Shared types for new features ───────────────────────────────────────────
+
+interface LineageNode {
+  table_id: string;
+  source_name: string;
+  confidence: number;
+  inference_method: string;
+  status: string;
+}
+
+interface RopaEntry {
+  source_name: string;
+  data_source_type: string;
+  owner_email: string;
+  pii_categories: string[];
+  first_detected_at: string | null;
+  last_scanned_at: string | null;
+  current_status: string;
+  purpose: string | null;
+  legal_basis: string | null;
+  cross_border_transfer: boolean;
+}
+
+interface TrendPoint {
+  week_start: string;
+  compliance_score: number;
+  new_flagged: number;
+  new_remediated: number;
+}
+
+// ─── Compliance Page ──────────────────────────────────────────────────────────
+
+function CompliancePage() {
+  const [tab, setTab] = useState<'ropa' | 'dsar' | 'intelligence'>('ropa');
+  const token = useAuthStore((s) => s.token);
+  const API = (import.meta as unknown as { env: Record<string,string> }).env?.VITE_API_URL ?? 'http://localhost:8000';
+
+  const tabBar: React.CSSProperties = {
+    display: 'flex',
+    gap: 4,
+    padding: '0 48px',
+    borderBottom: '1px solid rgba(0,51,102,0.1)',
+    backgroundColor: '#fff',
+  };
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    background: 'none',
+    border: 'none',
+    borderBottom: active ? '2px solid var(--gold)' : '2px solid transparent',
+    color: active ? 'var(--dark)' : 'var(--mid)',
+    cursor: 'pointer',
+    fontFamily: 'var(--fb)',
+    fontSize: 11,
+    fontWeight: active ? 600 : 400,
+    letterSpacing: '2px',
+    textTransform: 'uppercase',
+    padding: '14px 16px',
+    marginBottom: -1,
+    transition: 'color 0.15s',
+  });
+
+  return (
+    <>
+      <Hero
+        title="Compliance"
+        italic="Hub"
+        sub="ROPA register, data subject search, and live compliance intelligence — all derived from detected PII findings."
+      />
+      <div style={tabBar}>
+        <button style={tabStyle(tab === 'ropa')} onClick={() => setTab('ropa')}>
+          ROPA Register
+        </button>
+        <button style={tabStyle(tab === 'dsar')} onClick={() => setTab('dsar')}>
+          Data Subject Search
+        </button>
+        <button style={tabStyle(tab === 'intelligence')} onClick={() => setTab('intelligence')}>
+          Compliance Intelligence
+        </button>
+      </div>
+      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '48px 48px 80px' }}>
+        {tab === 'ropa' && <RopaTab token={token} API={API} />}
+        {tab === 'dsar' && <DsarTab token={token} API={API} />}
+        {tab === 'intelligence' && <IntelligenceTab token={token} API={API} />}
+      </div>
+    </>
+  );
+}
+
+// ── ROPA Tab ──────────────────────────────────────────────────────────────────
+
+function RopaTab({ token, API }: { token: string | null; API: string }) {
+  const [entries, setEntries] = useState<RopaEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [legalBases, setLegalBases] = useState<string[]>([]);
+  const [annotating, setAnnotating] = useState<string | null>(null);
+  const [form, setForm] = useState({ purpose: '', legal_basis: '', cross_border_transfer: false });
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${API}/api/v1/compliance/ropa`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (r.ok) {
+        const d = await r.json();
+        setEntries(d.entries ?? []);
+        setLegalBases(d.legal_bases ?? []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveAnnotation = async (sourceName: string) => {
+    await fetch(`${API}/api/v1/compliance/ropa/${encodeURIComponent(sourceName)}`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(form),
+    });
+    setAnnotating(null);
+    await load();
+  };
+
+  useState(() => { load(); });
+
+  const card: React.CSSProperties = {
+    background: '#fff',
+    borderRadius: 12,
+    boxShadow: '0 1px 4px rgba(0,51,102,0.08)',
+    overflow: 'hidden',
+    marginBottom: 24,
+  };
+  const incomplete = entries.filter((e) => !e.purpose).length;
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <div>
+          <Eyebrow>GDPR Art. 30</Eyebrow>
+          <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 300, color: 'var(--dark)' }}>
+            Records of Processing Activities
+          </h2>
+          {incomplete > 0 && (
+            <p style={{ fontFamily: 'var(--fb)', fontSize: 12, color: '#E03448', marginTop: 6 }}>
+              {incomplete} {incomplete === 1 ? 'entry requires' : 'entries require'} purpose annotation
+            </p>
+          )}
+        </div>
+        <a
+          href={`${API}/api/v1/compliance/ropa/export.csv`}
+          style={{
+            padding: '10px 20px', borderRadius: 8, background: 'var(--primary)',
+            color: '#fff', fontFamily: 'var(--fb)', fontSize: 12, fontWeight: 600,
+            letterSpacing: '1px', textDecoration: 'none',
+          }}
+        >
+          Export CSV
+        </a>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 40, fontFamily: 'var(--fb)', color: 'var(--mid)' }}>Loading ROPA…</div>
+      ) : (
+        <div style={card}>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: 'var(--light)' }}>
+                {['Data Source', 'Type', 'PII Categories', 'Status', 'Purpose', 'Legal Basis', ''].map((h) => (
+                  <th key={h} style={{
+                    fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px',
+                    textTransform: 'uppercase', color: 'var(--mid)', padding: '12px 16px', textAlign: 'left',
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((e) => (
+                <>
+                  <tr key={e.source_name} style={{ borderTop: '1px solid rgba(0,51,102,0.07)' }}>
+                    <td style={{ padding: '14px 16px', fontFamily: 'monospace', fontSize: 12, color: 'var(--dark)' }}>
+                      {e.source_name}
+                    </td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <span style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        {e.data_source_type}
+                      </span>
+                    </td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {e.pii_categories.map((c) => (
+                          <span key={c} style={{ background: 'var(--primary-10)', color: 'var(--primary)', borderRadius: 4, padding: '2px 7px', fontSize: 10, fontFamily: 'var(--fb)', fontWeight: 600 }}>
+                            {c}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td style={{ padding: '14px 16px' }}><StatusBadge status={e.current_status} /></td>
+                    <td style={{ padding: '14px 16px', fontFamily: 'var(--fb)', fontSize: 12, color: e.purpose ? 'var(--dark)' : '#E03448' }}>
+                      {e.purpose ?? '⚠ Not documented'}
+                    </td>
+                    <td style={{ padding: '14px 16px', fontFamily: 'var(--fb)', fontSize: 12, color: e.legal_basis ? 'var(--dark)' : 'var(--mid)' }}>
+                      {e.legal_basis ?? '—'}
+                    </td>
+                    <td style={{ padding: '14px 16px' }}>
+                      <button
+                        onClick={() => {
+                          setAnnotating(annotating === e.source_name ? null : e.source_name);
+                          setForm({ purpose: e.purpose ?? '', legal_basis: e.legal_basis ?? '', cross_border_transfer: e.cross_border_transfer });
+                        }}
+                        style={{ background: 'none', border: '1px solid var(--primary-30)', borderRadius: 6, padding: '4px 12px', fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--primary)', cursor: 'pointer' }}
+                      >
+                        {annotating === e.source_name ? 'Cancel' : 'Annotate'}
+                      </button>
+                    </td>
+                  </tr>
+                  {annotating === e.source_name && (
+                    <tr key={`${e.source_name}-form`}>
+                      <td colSpan={7} style={{ background: 'var(--primary-10)', padding: '20px 24px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 12, alignItems: 'end' }}>
+                          <div>
+                            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>Processing Purpose</div>
+                            <input
+                              value={form.purpose}
+                              onChange={(e) => setForm((f) => ({ ...f, purpose: e.target.value }))}
+                              placeholder="e.g. Customer analytics, payroll processing"
+                              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--primary-30)', fontFamily: 'var(--fb)', fontSize: 13 }}
+                            />
+                          </div>
+                          <div>
+                            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>Legal Basis</div>
+                            <select
+                              value={form.legal_basis}
+                              onChange={(ev) => setForm((f) => ({ ...f, legal_basis: ev.target.value }))}
+                              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--primary-30)', fontFamily: 'var(--fb)', fontSize: 13 }}
+                            >
+                              <option value="">— Select —</option>
+                              {legalBases.map((lb) => <option key={lb} value={lb}>{lb}</option>)}
+                            </select>
+                          </div>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--fb)', fontSize: 12, color: 'var(--dark)', paddingBottom: 8, cursor: 'pointer' }}>
+                            <input
+                              type="checkbox"
+                              checked={form.cross_border_transfer}
+                              onChange={(ev) => setForm((f) => ({ ...f, cross_border_transfer: ev.target.checked }))}
+                            />
+                            Cross-border transfer
+                          </label>
+                          <button
+                            onClick={() => saveAnnotation(e.source_name)}
+                            style={{ padding: '9px 20px', borderRadius: 8, background: 'var(--primary)', color: '#fff', border: 'none', fontFamily: 'var(--fb)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── DSAR Tab ──────────────────────────────────────────────────────────────────
+
+function DsarTab({ token, API }: { token: string | null; API: string }) {
+  const [identifierType, setIdentifierType] = useState('email');
+  const [identifierValue, setIdentifierValue] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ search_id: string; tables_matched: number; pii_category_searched: string; matches: { source_name: string; table_id: string; data_source_type: string; estimated_row_count: number; status: string; confidence: number }[] } | null>(null);
+  const [history, setHistory] = useState<{ search_id: string; initiated_by: string; identifier_type: string; tables_matched_count: number; created_at: string }[]>([]);
+
+  const loadHistory = async () => {
+    const r = await fetch(`${API}/api/v1/dsar/searches`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (r.ok) {
+      const d = await r.json();
+      setHistory(d.searches ?? []);
+    }
+  };
+
+  useState(() => { loadHistory(); });
+
+  const runSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!identifierValue.trim()) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const r = await fetch(`${API}/api/v1/dsar/search`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ identifier_type: identifierType, identifier_value: identifierValue }),
+      });
+      if (r.ok) {
+        setResult(await r.json());
+        await loadHistory();
+      }
+    } finally {
+      setLoading(false);
+      setIdentifierValue('');
+    }
+  };
+
+  return (
+    <>
+      <div style={{ marginBottom: 32 }}>
+        <Eyebrow>GDPR Art. 15</Eyebrow>
+        <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 300, color: 'var(--dark)', marginBottom: 8 }}>
+          Data Subject Search
+        </h2>
+        <p style={{ fontFamily: 'var(--fb)', fontSize: 13, color: 'var(--mid)', lineHeight: 1.7, maxWidth: 600 }}>
+          Identify all detected data assets containing records for a specific individual. The search term is never stored — only a SHA-256 hash is logged in the audit trail.
+        </p>
+      </div>
+
+      <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,51,102,0.08)', padding: '28px 32px', marginBottom: 32 }}>
+        <form onSubmit={runSearch} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>Identifier Type</div>
+            <select
+              value={identifierType}
+              onChange={(e) => setIdentifierType(e.target.value)}
+              style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--primary-10)', fontFamily: 'var(--fb)', fontSize: 13, minWidth: 160 }}
+            >
+              <option value="email">Email Address</option>
+              <option value="national_id">National ID / SSN / CPF</option>
+              <option value="phone">Phone Number</option>
+            </select>
+          </div>
+          <div style={{ flex: 1, minWidth: 260 }}>
+            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>Identifier Value</div>
+            <input
+              type={identifierType === 'email' ? 'email' : 'text'}
+              value={identifierValue}
+              onChange={(e) => setIdentifierValue(e.target.value)}
+              placeholder={identifierType === 'email' ? 'data.subject@example.com' : identifierType === 'phone' ? '+55 11 99999-0000' : '123.456.789-09'}
+              required
+              style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--primary-10)', fontFamily: 'var(--fb)', fontSize: 13 }}
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            style={{ padding: '10px 28px', borderRadius: 8, background: 'var(--primary)', color: '#fff', border: 'none', fontFamily: 'var(--fb)', fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+          >
+            {loading ? 'Searching…' : 'Search Data Lake →'}
+          </button>
+        </form>
+      </div>
+
+      {result && (
+        <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,51,102,0.08)', padding: '28px 32px', marginBottom: 32 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 32, fontWeight: 300, color: result.tables_matched > 0 ? '#E03448' : '#27B97C' }}>
+              {result.tables_matched}
+            </div>
+            <div>
+              <div style={{ fontFamily: 'var(--fb)', fontSize: 13, fontWeight: 600, color: 'var(--dark)' }}>
+                {result.tables_matched > 0 ? 'Tables contain this PII category' : 'No tables found for this PII category'}
+              </div>
+              <div style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)' }}>
+                Searched for: {result.pii_category_searched} · Search ID: {result.search_id.slice(0, 8)}…
+              </div>
+            </div>
+          </div>
+          {result.matches.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--light)' }}>
+                  {['Data Source', 'Type', 'Est. Rows', 'Confidence', 'Status'].map((h) => (
+                    <th key={h} style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', padding: '10px 14px', textAlign: 'left' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.matches.map((m) => (
+                  <tr key={m.table_id} style={{ borderTop: '1px solid rgba(0,51,102,0.07)' }}>
+                    <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: 12 }}>{m.source_name}</td>
+                    <td style={{ padding: '12px 14px', fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', textTransform: 'uppercase', letterSpacing: '1px' }}>{m.data_source_type}</td>
+                    <td style={{ padding: '12px 14px', fontFamily: 'var(--fb)', fontSize: 12 }}>{m.estimated_row_count?.toLocaleString() ?? '—'}</td>
+                    <td style={{ padding: '12px 14px' }}><ConfidenceBar value={m.confidence} /></td>
+                    <td style={{ padding: '12px 14px' }}><StatusBadge status={m.status} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', marginTop: 16, lineHeight: 1.6 }}>
+            These tables contain the detected PII category. Row-level presence of the specific identifier requires manual investigation. This search is logged in the audit trail.
+          </p>
+        </div>
+      )}
+
+      {history.length > 0 && (
+        <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,51,102,0.08)', padding: '28px 32px' }}>
+          <Eyebrow>Search History</Eyebrow>
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 12 }}>
+            <thead>
+              <tr style={{ background: 'var(--light)' }}>
+                {['Time', 'Type', 'By', 'Tables Matched'].map((h) => (
+                  <th key={h} style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', padding: '10px 14px', textAlign: 'left' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {history.slice(0, 10).map((s) => (
+                <tr key={s.search_id} style={{ borderTop: '1px solid rgba(0,51,102,0.07)' }}>
+                  <td style={{ padding: '10px 14px', fontFamily: 'var(--fb)', fontSize: 12, color: 'var(--mid)' }}>
+                    {new Date(s.created_at).toLocaleString()}
+                  </td>
+                  <td style={{ padding: '10px 14px', fontFamily: 'var(--fb)', fontSize: 12, textTransform: 'capitalize' }}>{s.identifier_type.replace(/_/g, ' ')}</td>
+                  <td style={{ padding: '10px 14px', fontFamily: 'var(--fb)', fontSize: 12, color: 'var(--mid)' }}>{s.initiated_by}</td>
+                  <td style={{ padding: '10px 14px', fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: s.tables_matched_count > 0 ? '#E03448' : 'var(--mid)' }}>
+                    {s.tables_matched_count}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Compliance Intelligence Tab ───────────────────────────────────────────────
+
+function SparkLine({ scores }: { scores: number[] }) {
+  if (scores.length < 2) return null;
+  const w = 320;
+  const h = 64;
+  const min = Math.min(...scores, 0);
+  const max = Math.max(...scores, 100);
+  const range = max - min || 1;
+  const xs = scores.map((_, i) => (i / (scores.length - 1)) * w);
+  const ys = scores.map((v) => h - ((v - min) / range) * (h - 8) - 4);
+  const points = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
+  const last = scores[scores.length - 1];
+  const first = scores[0];
+  const trend = last - first;
+  const color = trend >= 0 ? '#27B97C' : '#E03448';
+  return (
+    <div>
+      <svg width={w} height={h} style={{ overflow: 'visible', display: 'block' }}>
+        <polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        <circle cx={xs[xs.length - 1]} cy={ys[ys.length - 1]} r={4} fill={color} />
+      </svg>
+      <div style={{ fontFamily: 'var(--fb)', fontSize: 10, color, marginTop: 4 }}>
+        {trend >= 0 ? '▲' : '▼'} {Math.abs(Math.round(trend))}pp over 12 weeks
+      </div>
+    </div>
+  );
+}
+
+function IntelligenceTab({ token, API }: { token: string | null; API: string }) {
+  const [trends, setTrends] = useState<{ trend: TrendPoint[]; avg_ttr_days: number | null } | null>(null);
+  const [forecast, setForecast] = useState<{ current_score: number; projected_score_30d: number; remediations_per_week: number; total_pending: number; days_to_full_compliance: number | null } | null>(null);
+  const [exposure, setExposure] = useState<{ total_exposed_records: number; estimated_fine_low_eur: number; estimated_fine_high_eur: number; methodology: string } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useState(() => {
+    const h = { Authorization: `Bearer ${token}` };
+    Promise.all([
+      fetch(`${API}/api/v1/compliance/trends`, { headers: h }).then((r) => r.ok ? r.json() : null),
+      fetch(`${API}/api/v1/compliance/forecast`, { headers: h }).then((r) => r.ok ? r.json() : null),
+      fetch(`${API}/api/v1/compliance/risk-exposure`, { headers: h }).then((r) => r.ok ? r.json() : null),
+    ]).then(([t, f, e]) => {
+      setTrends(t);
+      setForecast(f);
+      setExposure(e);
+      setLoading(false);
+    });
+  });
+
+  const card: React.CSSProperties = {
+    background: '#fff', borderRadius: 12,
+    boxShadow: '0 1px 4px rgba(0,51,102,0.08)',
+    padding: '28px 32px',
+  };
+
+  if (loading) {
+    return <div style={{ textAlign: 'center', padding: 60, fontFamily: 'var(--fb)', color: 'var(--mid)' }}>Loading compliance intelligence…</div>;
+  }
+
+  const scores = trends?.trend.map((t) => t.compliance_score) ?? [];
+  const currentScore = forecast?.current_score ?? 0;
+  const scoreColor = currentScore >= 90 ? '#27B97C' : currentScore >= 70 ? '#F07020' : '#E03448';
+
+  return (
+    <>
+      <Eyebrow>Live Analytics</Eyebrow>
+      <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 300, color: 'var(--dark)', marginBottom: 32 }}>
+        Compliance Intelligence
+      </h2>
+
+      {/* KPI row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 32 }}>
+        {[
+          { label: 'Compliance Score', value: `${currentScore}%`, color: scoreColor, sub: 'current' },
+          { label: 'Projected (30d)', value: `${forecast?.projected_score_30d ?? '—'}%`, color: 'var(--primary)', sub: `at ${forecast?.remediations_per_week ?? 0} remediations/week` },
+          { label: 'Open Findings', value: forecast?.total_pending ?? '—', color: '#E03448', sub: 'pending remediation' },
+          { label: 'Avg. Time to Remediation', value: trends?.avg_ttr_days != null ? `${trends.avg_ttr_days}d` : '—', color: 'var(--dark)', sub: '90-day average' },
+        ].map((k) => (
+          <div key={k.label} style={card}>
+            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 8 }}>{k.label}</div>
+            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 36, fontWeight: 300, color: k.color, lineHeight: 1 }}>{k.value}</div>
+            <div style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', marginTop: 6 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Trend chart */}
+      <div style={{ ...card, marginBottom: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+          <div>
+            <Eyebrow>12-Week Trend</Eyebrow>
+            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: 'var(--dark)' }}>
+              Compliance Score History
+            </div>
+          </div>
+          {scores.length > 1 && <SparkLine scores={scores} />}
+        </div>
+        <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(0,51,102,0.1)' }}>
+          {trends?.trend.slice(-8).map((t, i) => {
+            const sc = t.compliance_score;
+            const bg = sc >= 90 ? '#E0F7EF' : sc >= 70 ? '#FEF0E6' : '#FDEAEA';
+            const fg = sc >= 90 ? '#0D5C3A' : sc >= 70 ? '#7A3800' : '#7A1020';
+            return (
+              <div key={t.week_start} style={{ flex: 1, background: bg, padding: '12px 8px', textAlign: 'center', borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.5)' : 'none' }}>
+                <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: fg }}>{sc}%</div>
+                <div style={{ fontFamily: 'var(--fb)', fontSize: 9, color: fg, opacity: 0.7, marginTop: 2 }}>
+                  W{i + 1}
+                </div>
+                {t.new_flagged > 0 && (
+                  <div style={{ fontFamily: 'var(--fb)', fontSize: 9, color: '#E03448', marginTop: 2 }}>+{t.new_flagged}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Risk exposure */}
+      {exposure && (
+        <div style={card}>
+          <Eyebrow>Regulatory Risk</Eyebrow>
+          <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: 'var(--dark)', marginBottom: 20 }}>
+            Estimated Fine Exposure
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+            {[
+              { label: 'Exposed Records', value: exposure.total_exposed_records.toLocaleString(), color: '#E03448' },
+              { label: 'Low Estimate', value: `€${exposure.estimated_fine_low_eur.toLocaleString()}`, color: '#F07020' },
+              { label: 'High Estimate', value: `€${exposure.estimated_fine_high_eur.toLocaleString()}`, color: '#E03448' },
+            ].map((k) => (
+              <div key={k.label} style={{ background: 'var(--light)', borderRadius: 10, padding: '16px 20px' }}>
+                <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>{k.label}</div>
+                <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 28, fontWeight: 300, color: k.color }}>{k.value}</div>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', lineHeight: 1.7 }}>{exposure.methodology}</p>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ─── Root App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -2961,6 +3638,7 @@ export default function App() {
           )}
           {page === 'audit' && <AuditPage />}
           {page === 'data-sources' && <DataSourcesPage onSourceClick={handleSourceClick} />}
+          {page === 'compliance' && <CompliancePage />}
           {page === 'info' && <InfoPage />}
         </main>
         <Footer />

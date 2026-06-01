@@ -338,3 +338,183 @@ async def data_sources(
     ]
 
     return DataSourcesResponse(items=items, total=len(items))
+
+
+# ── Lineage ───────────────────────────────────────────────────────────────────
+
+@router.get("/tables/{table_id}/lineage")
+async def get_lineage(
+    table_id: str,
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(get_current_user),
+) -> dict:
+    parents = await db.execute(
+        text("""
+            SELECT le.parent_table_id, se.source_name,
+                   le.confidence, le.inference_method,
+                   CASE
+                     WHEN count(*) FILTER (WHERE pf.status = 'quarantined') > 0 THEN 'quarantined'
+                     WHEN count(*) FILTER (WHERE pf.status = 'remediated')  > 0 THEN 'remediated'
+                     WHEN count(*) FILTER (WHERE pf.status = 'flagged')     > 0 THEN 'flagged'
+                     ELSE 'classified'
+                   END AS status
+            FROM lineage_edges le
+            LEFT JOIN scanner_events se ON se.source_name = le.parent_table_id
+            LEFT JOIN pii_findings pf
+                ON pf.table_id = le.parent_table_id AND pf.flagged = true
+            WHERE le.child_table_id = :tid
+            GROUP BY le.parent_table_id, se.source_name,
+                     le.confidence, le.inference_method
+        """),
+        {"tid": table_id},
+    )
+    children = await db.execute(
+        text("""
+            SELECT le.child_table_id, se.source_name,
+                   le.confidence, le.inference_method,
+                   CASE
+                     WHEN count(*) FILTER (WHERE pf.status = 'quarantined') > 0 THEN 'quarantined'
+                     WHEN count(*) FILTER (WHERE pf.status = 'remediated')  > 0 THEN 'remediated'
+                     WHEN count(*) FILTER (WHERE pf.status = 'flagged')     > 0 THEN 'flagged'
+                     ELSE 'classified'
+                   END AS status
+            FROM lineage_edges le
+            LEFT JOIN scanner_events se ON se.source_name = le.child_table_id
+            LEFT JOIN pii_findings pf
+                ON pf.table_id = le.child_table_id AND pf.flagged = true
+            WHERE le.parent_table_id = :tid
+            GROUP BY le.child_table_id, se.source_name,
+                     le.confidence, le.inference_method
+        """),
+        {"tid": table_id},
+    )
+    return {
+        "table_id": table_id,
+        "parents": [
+            {
+                "table_id": r.parent_table_id,
+                "source_name": r.source_name,
+                "confidence": round(float(r.confidence), 2),
+                "inference_method": r.inference_method,
+                "status": r.status or "unknown",
+            }
+            for r in parents.fetchall()
+        ],
+        "children": [
+            {
+                "table_id": r.child_table_id,
+                "source_name": r.source_name,
+                "confidence": round(float(r.confidence), 2),
+                "inference_method": r.inference_method,
+                "status": r.status or "unknown",
+            }
+            for r in children.fetchall()
+        ],
+    }
+
+
+@router.post("/tables/{table_id}/lineage/infer")
+async def infer_lineage(
+    table_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_role("dpo", "admin")),
+) -> dict:
+    """Path-heuristic lineage: tables named backup/staging/dev/temp/copy/dump
+    are treated as children of prod-like sources."""
+    child_keywords = {
+        "backup", "copy", "dump", "staging", "dev", "test",
+        "temp", "archive", "export", "sample", "snapshot",
+    }
+
+    this = await db.execute(
+        text("SELECT source_name FROM scanner_events WHERE id::text = :tid OR source_name = :tid LIMIT 1"),
+        {"tid": table_id},
+    )
+    this_row = this.fetchone()
+    if not this_row:
+        return {"created": 0, "message": "Table not found"}
+
+    this_source = this_row.source_name
+    this_is_child = any(kw in this_source.lower() for kw in child_keywords)
+
+    others = await db.execute(
+        text("""
+            SELECT DISTINCT pf.table_id, se.source_name
+            FROM pii_findings pf
+            JOIN scanner_events se ON se.id = pf.scanner_event_id
+            WHERE pf.flagged = true AND pf.table_id != :tid
+        """),
+        {"tid": table_id},
+    )
+
+    created = 0
+    for row in others.fetchall():
+        other_is_child = any(kw in row.source_name.lower() for kw in child_keywords)
+
+        if this_is_child and not other_is_child:
+            parent_id, child_id = row.table_id, table_id
+        elif not this_is_child and other_is_child:
+            parent_id, child_id = table_id, row.table_id
+        else:
+            continue
+
+        try:
+            await db.execute(
+                text("""
+                    INSERT INTO lineage_edges
+                        (parent_table_id, child_table_id, confidence, inference_method)
+                    VALUES (:p, :c, 0.6, 'path_heuristic')
+                    ON CONFLICT (parent_table_id, child_table_id) DO NOTHING
+                """),
+                {"p": parent_id, "c": child_id},
+            )
+            created += 1
+        except Exception:
+            await db.rollback()
+
+    await db.execute(
+        text("""
+            INSERT INTO audit_log (event_type, table_id, actor, details_json)
+            VALUES ('lineage_inferred', :tid, :actor, CAST(:d AS jsonb))
+        """),
+        {
+            "tid": table_id,
+            "actor": user["email"],
+            "d": f'{{"edges_created":{created},"method":"path_heuristic"}}',
+        },
+    )
+    await db.commit()
+    return {"created": created, "method": "path_heuristic"}
+
+
+@router.post("/tables/{table_id}/lineage/cascade-review")
+async def cascade_review(
+    table_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(require_role("dpo", "admin")),
+) -> dict:
+    children = await db.execute(
+        text("""
+            SELECT child_table_id FROM lineage_edges
+            WHERE parent_table_id = :tid AND confidence >= 0.7
+        """),
+        {"tid": table_id},
+    )
+    child_ids = [r.child_table_id for r in children.fetchall()]
+    if not child_ids:
+        return {"queued": 0, "message": "No confirmed children to cascade to"}
+
+    for cid in child_ids:
+        await db.execute(
+            text("""
+                INSERT INTO audit_log (event_type, table_id, actor, details_json)
+                VALUES ('cascade_review_queued', :cid, :actor, CAST(:d AS jsonb))
+            """),
+            {
+                "cid": cid,
+                "actor": user["email"],
+                "d": f'{{"triggered_by":"{table_id}"}}',
+            },
+        )
+    await db.commit()
+    return {"queued": len(child_ids), "child_table_ids": child_ids}
