@@ -98,7 +98,7 @@ def _load_pipeline(model_dir: str, device: int = -1):
         model=model,
         tokenizer=tokenizer,
         device=device,
-        return_all_scores=True,
+        top_k=None,  # all label scores; `return_all_scores` was removed in transformers 5
         truncation=True,
         max_length=128,
     )

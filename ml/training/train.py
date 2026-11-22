@@ -27,9 +27,10 @@ import time
 from pathlib import Path
 
 import mlflow
-import mlflow.pytorch
+import mlflow.transformers
 import numpy as np
 import torch
+import transformers
 from sklearn.metrics import classification_report, f1_score
 from transformers import (
     AutoModelForSequenceClassification,
@@ -101,9 +102,10 @@ def train(
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size * 2,
         learning_rate=learning_rate,
-        warmup_ratio=warmup_ratio,
+        # transformers 5 removed `warmup_ratio`; a float in [0, 1) is a ratio of total steps
+        warmup_steps=warmup_ratio,
         weight_decay=0.01,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",  # `evaluation_strategy` was removed in transformers 4.46
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="macro_f1",
@@ -187,11 +189,20 @@ def train(
         report_path.write_text(json.dumps(full_metrics, indent=2))
         mlflow.log_artifact(str(report_path))
 
-        # Log model to MLflow registry
-        mlflow.pytorch.log_model(
-            pytorch_model=model,
-            artifact_path="model",
+        # Log model to MLflow registry with the transformers flavor: it stores
+        # safetensors + tokenizer + task. (mlflow 3's pytorch flavor defaults to
+        # torch.export and the pickle fallback is the unsafe-deserialization class
+        # behind several mlflow advisories.)
+        mlflow.transformers.log_model(
+            transformers_model={"model": trainer.model, "tokenizer": tokenizer},
+            task="text-classification",
+            name="model",  # mlflow 3: `name` replaces the deprecated `artifact_path`
             registered_model_name="pii-classifier",
+            # Explicit, so mlflow does not infer extras such as torchvision.
+            pip_requirements=[
+                f"torch=={torch.__version__.split('+')[0]}",
+                f"transformers=={transformers.__version__}",
+            ],
         )
 
     if macro_f1 < _MIN_F1_TARGET:

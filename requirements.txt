@@ -1,7 +1,6 @@
 # Core platform: API, scanner, data/ETL jobs.
 # The ML stack lives in requirements-ml.txt (inference + tests) and
-# requirements-train.txt (training, adds mlflow); see the notes there.
-# CI audits this file with pip-audit in blocking mode.
+# requirements-train.txt (training, adds mlflow). CI audits every file.
 
 # ─── Web framework ───────────────────────────
 fastapi==0.165.0
@@ -30,11 +29,11 @@ fastavro==1.9.4
 
 # ─── Data / sampling ─────────────────────────
 pandas==2.2.2
-# torch 2.3 (requirements-ml.txt) is built against NumPy 1.x; with NumPy 2 the
-# HF pipeline fails at runtime ("Numpy is not available"). Unpinned, pip picks 2.x.
+# Pinned to NumPy 1.x: tested with pandas 2.2 and pyarrow 23. torch 2.15 also
+# supports NumPy 2, so numpy, pandas and pyarrow (26.x needs NumPy 2) can move
+# to 2.x together later. Never leave numpy unpinned: with torch < 2.4, NumPy 2
+# breaks the HF pipeline at runtime, and pyarrow fails only at import.
 numpy==1.26.4
-# 23.0.1 is the first release without known advisories; 26.x requires NumPy 2,
-# which torch 2.3 cannot use (pip does not catch it: it fails only at import).
 pyarrow==23.0.1
 
 # ─── AWS ─────────────────────────────────────

@@ -15,8 +15,8 @@ RUN pip install --no-cache-dir \
     uvicorn[standard]==0.54.0 \
     pydantic==2.14.4 \
     pydantic-settings==2.16.3 \
-    torch==2.3.0+cpu \
-    transformers==4.41.1 \
+    torch==2.15.0+cpu \
+    transformers==5.24.0 \
     prometheus_client==0.20.0 \
     structlog==24.1.0 \
     boto3==1.34.101 \

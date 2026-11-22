@@ -64,13 +64,16 @@ jobs:
         if: always()
         run: pip-audit -r api/requirements.txt
 
+      # No PyTorch --extra-index-url here: torch would resolve to the +cpu build,
+      # which is not on PyPI, and pip-audit silently skips it. The PyPI release
+      # with the same version carries the same advisories.
       - name: Audit ML dependencies (inference + tests)
         if: always()
-        run: pip-audit -r requirements-ml.txt --extra-index-url https://download.pytorch.org/whl/cpu
+        run: pip-audit -r requirements-ml.txt
 
       - name: Audit training dependencies
         if: always()
-        run: pip-audit -r requirements-train.txt --extra-index-url https://download.pytorch.org/whl/cpu
+        run: pip-audit -r requirements-train.txt
 
   # ─── Python tests ───────────────────────────────────────────────────────────
   python-test:

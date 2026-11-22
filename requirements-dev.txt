@@ -15,8 +15,8 @@ pre-commit==3.7.1
 
 # ─── ML (dev only) ───────────────────────────
 # torch, transformers, scikit-learn and faker come from requirements-ml.txt;
-# mlflow is training-only (requirements-train.txt). Never re-pin them here:
-# different versions make the install unresolvable.
+# mlflow and accelerate are training-only (requirements-train.txt). Never re-pin
+# them here: different versions make the install unresolvable.
 datasets==2.19.1
 evaluate==0.4.2
 

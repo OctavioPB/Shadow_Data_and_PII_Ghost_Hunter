@@ -168,7 +168,7 @@ Dependency layout (each file is audited separately with `pip-audit` in CI):
 - `requirements.txt`: core platform (API, scanner, data/ETL jobs).
 - `api/requirements.txt`: what the API image installs.
 - `requirements-ml.txt`: torch, transformers, scikit-learn and faker (inference and tests).
-- `requirements-train.txt`: the ML stack plus mlflow, used only by the training workflow. It is kept apart because mlflow 2.13 pins `pyarrow<16`.
+- `requirements-train.txt`: the ML stack plus mlflow and accelerate, used only by the training workflow.
 - `requirements-dev.txt`: core + ML + test and lint tools (`make install`).
 
 The Airflow providers are not pip-installed; they come with the `apache/airflow` image. Install the ML files with `--extra-index-url https://download.pytorch.org/whl/cpu` to get CPU-only torch.
@@ -198,7 +198,7 @@ The Airflow providers are not pip-installed; they come with the `apache/airflow`
 
 - The `apache/airflow` image used by docker-compose has no pyspark or JVM. Locally, anonymization therefore fails and the remediation DAG falls back to quarantine plus DPO notification.
 - Automatic remediation covers S3 objects only. Catalog tables (Glue/Athena) are flagged and reported but not moved.
-- The core and API dependencies have no known vulnerabilities. The pinned ML stack (torch 2.3, transformers 4.41, mlflow 2.13) still does: the fixes are major upgrades that must be re-validated against the trained model.
+- numpy, pandas and pyarrow stay on NumPy 1.x (`numpy==1.26.4`, `pandas==2.2.2`, `pyarrow==23.0.1`). torch 2.15 supports NumPy 2, so the three can move together later.
 - The user store is static (development only).
 
 ---
