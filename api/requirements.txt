@@ -1,0 +1,10 @@
+# Runtime dependencies of the FastAPI service only (pins match ../requirements.txt).
+# The full requirements.txt also carries torch, pyspark, transformers, mlflow and
+# Airflow providers, none of which the API imports.
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+pydantic==2.7.1
+sqlalchemy==2.0.30
+asyncpg==0.29.0
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.9
