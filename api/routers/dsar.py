@@ -1,19 +1,25 @@
 """
 DSAR (Data Subject Access Request) search endpoint.
 Searches detected PII tables by identifier type.
-The raw identifier value is never stored — only its SHA-256 hash.
+The raw identifier value is never stored — only a keyed HMAC-SHA256 of it.
+A plain SHA-256 of an email/phone is trivially reversible by dictionary attack.
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
+import os
 import uuid
+from typing import Literal
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth import get_current_user, require_role
+from api.auth import SECRET_KEY, require_role
 from api.db import get_db
 
 router = APIRouter(prefix="/api/v1/dsar", tags=["dsar"])
@@ -24,24 +30,34 @@ _CATEGORY_MAP: dict[str, str] = {
     "phone":       "PHONE",
 }
 
+_HASH_KEY = os.environ.get("DSAR_HASH_KEY", SECRET_KEY).encode()
+
+
+class DsarSearchRequest(BaseModel):
+    identifier_type: Literal["email", "national_id", "phone"] = "email"
+    identifier_value: str = Field(..., min_length=1, max_length=320)
+
+
+def _identifier_hash(value: str) -> str:
+    normalized = value.strip().lower()
+    return hmac.new(_HASH_KEY, normalized.encode(), hashlib.sha256).hexdigest()
+
 
 @router.post("/search")
 async def dsar_search(
-    body: dict,
+    body: DsarSearchRequest,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_role("dpo", "admin")),
 ) -> dict:
-    identifier_type = body.get("identifier_type", "email")
-    identifier_value = str(body.get("identifier_value", ""))
-
-    if identifier_type not in _CATEGORY_MAP:
-        return {
-            "error": "Invalid identifier_type. Accepted: email, national_id, phone"
-        }
-
+    identifier_type = body.identifier_type
     pii_category = _CATEGORY_MAP[identifier_type]
-    search_hash = hashlib.sha256(identifier_value.encode()).hexdigest()
+    search_hash = _identifier_hash(body.identifier_value)
     search_id = str(uuid.uuid4())
+
+    searched = await db.execute(
+        text("SELECT count(DISTINCT table_id) FROM pii_findings WHERE flagged = true")
+    )
+    tables_searched = int(searched.scalar() or 0)
 
     rows = await db.execute(
         text("""
@@ -95,7 +111,7 @@ async def dsar_search(
             "actor": user["email"],
             "itype": identifier_type,
             "hash": search_hash,
-            "searched": len(matches),
+            "searched": tables_searched,
             "matched": len(matches),
         },
     )
@@ -107,11 +123,11 @@ async def dsar_search(
         {
             "sid": search_id,
             "actor": user["email"],
-            "d": (
-                f'{{"search_id":"{search_id}",'
-                f'"identifier_type":"{identifier_type}",'
-                f'"tables_matched":{len(matches)}}}'
-            ),
+            "d": json.dumps({
+                "search_id": search_id,
+                "identifier_type": identifier_type,
+                "tables_matched": len(matches),
+            }),
         },
     )
     await db.commit()

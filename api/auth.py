@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hmac
+import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -8,9 +10,16 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
+log = logging.getLogger(__name__)
+
+_DEV_SECRET = "dev-secret-key-change-in-production"
+# `or` (not a get() default) so an empty JWT_SECRET_KEY= line in .env does not
+# produce an empty signing key.
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or _DEV_SECRET
+if SECRET_KEY == _DEV_SECRET:
+    log.warning("JWT_SECRET_KEY is not set — using the insecure development key")
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
@@ -42,7 +51,8 @@ _USERS: dict[str, dict[str, str]] = {
 
 def authenticate_user(email: str, password: str) -> dict[str, str] | None:
     user = _USERS.get(email)
-    if not user or user["password"] != password:
+    # Constant-time comparison: `!=` leaks password prefix length via timing.
+    if not user or not hmac.compare_digest(user["password"].encode(), password.encode()):
         return None
     return {"email": email, "role": user["role"], "name": user["name"]}
 

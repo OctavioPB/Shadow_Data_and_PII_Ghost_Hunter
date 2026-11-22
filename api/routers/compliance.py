@@ -6,15 +6,18 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth import get_current_user, require_role
 from api.db import get_db
+from api.services.export import csv_safe
 
 router = APIRouter(prefix="/api/v1/compliance", tags=["compliance"])
 
@@ -26,6 +29,22 @@ _LEGAL_BASES = [
     "Vital interests",
     "Public task",
 ]
+
+
+class RopaAnnotation(BaseModel):
+    purpose: str | None = Field(None, max_length=2000)
+    legal_basis: str | None = None
+    cross_border_transfer: bool = False
+
+    @field_validator("legal_basis")
+    @classmethod
+    def _known_legal_basis(cls, v: str | None) -> str | None:
+        # GDPR Art. 6 lists a closed set of lawful bases; reject free text.
+        if v in (None, ""):
+            return None
+        if v not in _LEGAL_BASES:
+            raise ValueError(f"legal_basis must be one of: {', '.join(_LEGAL_BASES)}")
+        return v
 
 
 # ── ROPA ──────────────────────────────────────────────────────────────────────
@@ -112,17 +131,16 @@ async def export_ropa_csv(
     ])
     for e in entries:
         w.writerow([
-            e["source_name"], e["data_source_type"], e["owner_email"] or "",
+            csv_safe(e["source_name"]), e["data_source_type"], csv_safe(e["owner_email"] or ""),
             ", ".join(e["pii_categories"]),
             e["first_detected_at"] or "", e["last_scanned_at"] or "",
             e["current_status"],
-            e["purpose"] or "(not documented)",
+            csv_safe(e["purpose"] or "(not documented)"),
             e["legal_basis"] or "(not documented)",
             "Yes" if e["cross_border_transfer"] else "No",
         ])
-    buf.seek(0)
     return StreamingResponse(
-        iter([buf.read()]),
+        iter([buf.getvalue()]),
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=ropa_export.csv"},
     )
@@ -131,7 +149,7 @@ async def export_ropa_csv(
 @router.patch("/ropa/{source_name}")
 async def annotate_ropa(
     source_name: str,
-    body: dict,
+    body: RopaAnnotation,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(require_role("dpo", "admin")),
 ) -> dict:
@@ -144,9 +162,9 @@ async def annotate_ropa(
         """),
         {
             "sn": source_name,
-            "purpose": body.get("purpose"),
-            "lb": body.get("legal_basis"),
-            "cbt": bool(body.get("cross_border_transfer", False)),
+            "purpose": body.purpose,
+            "lb": body.legal_basis,
+            "cbt": body.cross_border_transfer,
             "actor": user["email"],
         },
     )
@@ -158,7 +176,7 @@ async def annotate_ropa(
         {
             "sn": source_name,
             "actor": user["email"],
-            "d": f'{{"source_name":"{source_name}","legal_basis":"{body.get("legal_basis","")}"}}',
+            "d": json.dumps({"source_name": source_name, "legal_basis": body.legal_basis}),
         },
     )
     await db.commit()
@@ -185,7 +203,8 @@ async def compliance_trends(
                 date_trunc('week', created_at)                                         AS week_start,
                 count(DISTINCT table_id) FILTER (WHERE flagged = true)                 AS new_flagged,
                 count(DISTINCT table_id)
-                    FILTER (WHERE status IN ('remediated', 'quarantined'))              AS new_remediated
+                    FILTER (WHERE flagged = true
+                            AND status IN ('remediated', 'quarantined'))                AS new_remediated
             FROM pii_findings
             WHERE created_at >= now() - interval '84 days'
             GROUP BY 1
@@ -226,6 +245,7 @@ async def compliance_trends(
         JOIN audit_log r ON r.table_id = d.table_id
         WHERE d.event_type = 'pii_detected'
           AND r.event_type IN ('anonymization_completed', 'quarantine_completed')
+          AND r.timestamp >= d.timestamp
           AND d.timestamp >= now() - interval '84 days'
     """))
     ttr_row = ttr.fetchone()
@@ -245,21 +265,22 @@ async def compliance_forecast(
 ) -> dict:
     totals = await db.execute(text("""
         SELECT
-            count(DISTINCT table_id) FILTER (WHERE flagged = true)                     AS total_flagged,
+            count(DISTINCT table_id)                                                   AS total_flagged,
             count(DISTINCT table_id)
                 FILTER (WHERE status IN ('remediated', 'quarantined'))                 AS total_remediated
         FROM pii_findings
+        WHERE flagged = true
     """))
     row = totals.fetchone()
     total_flagged = int(row.total_flagged or 0)
     total_remediated = int(row.total_remediated or 0)
-    pending = total_flagged - total_remediated
+    pending = max(total_flagged - total_remediated, 0)
     current_score = (
         round((total_remediated / total_flagged) * 100, 1) if total_flagged > 0 else 100.0
     )
 
     vel = await db.execute(text("""
-        SELECT count(*) AS cnt
+        SELECT count(DISTINCT table_id) AS cnt
         FROM audit_log
         WHERE event_type IN ('anonymization_completed', 'quarantine_completed')
           AND timestamp >= now() - interval '28 days'
@@ -293,11 +314,16 @@ async def risk_exposure(
     _user: dict = Depends(get_current_user),
 ) -> dict:
     result = await db.execute(text("""
+        -- EXISTS (not JOIN) so each table's rows are counted once, not once
+        -- per flagged column.
         SELECT coalesce(sum(se.estimated_row_count), 0) AS total_records
-        FROM pii_findings pf
-        JOIN scanner_events se ON se.id = pf.scanner_event_id
-        WHERE pf.flagged = true
-          AND pf.status NOT IN ('remediated', 'quarantined')
+        FROM scanner_events se
+        WHERE EXISTS (
+            SELECT 1 FROM pii_findings pf
+            WHERE pf.scanner_event_id = se.id
+              AND pf.flagged = true
+              AND pf.status NOT IN ('remediated', 'quarantined')
+        )
     """))
     row = result.fetchone()
     total = int(row.total_records or 0)

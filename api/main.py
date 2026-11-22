@@ -1,15 +1,25 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.middleware import SecurityHeadersMiddleware
 from api.routers import audit, auth, compliance, demo as _demo_router, dsar, risks
 
+_DOCS_ENABLED = os.environ.get("API_DOCS_ENABLED", "true").lower() in ("1", "true", "yes")
+_CORS_ORIGINS = [
+    o.strip()
+    for o in os.environ.get("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if o.strip()
+]
+
 app = FastAPI(
     title="PII Ghost-Hunter API",
     description="Shadow Data & PII detection and remediation platform",
     version="0.1.0",
-    # Disable docs in production — re-enable via env var for dev
-    docs_url="/docs",
+    # Set API_DOCS_ENABLED=false in production to hide the OpenAPI UI.
+    docs_url="/docs" if _DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if _DOCS_ENABLED else None,
     redoc_url=None,
 )
 
@@ -18,9 +28,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    # PATCH is required by the ROPA annotation endpoint.
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 

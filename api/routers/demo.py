@@ -41,12 +41,6 @@ def _demo_enabled() -> bool:
 
 # ─── Synthetic dataset ────────────────────────────────────────────────────────
 
-_now = datetime.now(timezone.utc)
-
-
-def _ago(days: float, hours: float = 0) -> datetime:
-    return _now - timedelta(days=days, hours=hours)
-
 
 # Each entry: scanner_event + its pii_findings + audit events
 # table_status drives pii_findings.status for all columns in that table
@@ -345,21 +339,28 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
             detail="Demo mode is not enabled on this server. Set DEMO_MODE=true and restart.",
         )
 
+    # Relative timestamps are computed per request: a module-level "now" froze
+    # at import time, so re-seeding a long-running server produced stale data.
+    now = datetime.now(timezone.utc)
+
+    def _ago(days: float) -> datetime:
+        return now - timedelta(days=days)
+
     # ── Check whether migration 0006 has been applied ─────────────────────────
-    # If the 'quarantined' status is not yet in the constraint, we fall back to
-    # 'flagged' so the seeder works without requiring a manual migration run.
-    try:
-        await db.execute(
-            text("""
-                SELECT 1 FROM pii_findings
-                WHERE status = 'quarantined'
-                LIMIT 0
-            """)
-        )
-        quarantine_status = "quarantined"
-    except Exception:
-        await db.rollback()
-        quarantine_status = "flagged"  # migration 0006 not yet applied
+    # If 'quarantined' is not yet allowed by the CHECK constraint, fall back to
+    # 'flagged' so the seeder works without a manual migration run. (A SELECT
+    # filtering on status = 'quarantined' never fails, so the constraint
+    # definition itself has to be inspected.)
+    constraint = await db.execute(
+        text("""
+            SELECT pg_get_constraintdef(oid) FROM pg_constraint
+            WHERE conname = 'chk_pii_findings_status'
+        """)
+    )
+    constraint_def = constraint.scalar() or ""
+    quarantine_status = (
+        "quarantined" if not constraint_def or "quarantined" in constraint_def else "flagged"
+    )
 
     # ── 1. Clear previous demo data (idempotent) ──────────────────────────────
     # Audit log is append-only (DB trigger prevents DELETE) -- skip it.
@@ -380,7 +381,9 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
         text("DELETE FROM quarantine_manifest WHERE table_id LIKE 'tbl-demo-%'")
     )
 
-    # ── 2. Insert scanner_events + pii_findings ───────────────────────────────
+    # ── 2. Insert scanner_events + pii_findings (batched: one round trip each)
+    event_rows: list[dict] = []
+    finding_rows: list[dict] = []
     for tbl in _DEMO_TABLES:
         se_id = str(uuid.uuid4())
         created = _ago(tbl["days_ago"])
@@ -389,17 +392,7 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
         raw_status = tbl["table_status"]
         pf_status = quarantine_status if raw_status == "quarantined" else raw_status
 
-        await db.execute(
-            text("""
-                INSERT INTO scanner_events
-                    (id, event_id, event_type, source_name, data_source_type,
-                     status, raw_event, owner_email, bucket,
-                     estimated_row_count, column_count, created_at, updated_at)
-                VALUES
-                    (:id, :eid, 'table.created', :src, :dst,
-                     :status, CAST(:raw AS jsonb), :owner, :bucket,
-                     :rows, :cols, :ts, :ts)
-            """),
+        event_rows.append(
             {
                 "id": se_id,
                 "eid": f"demo-evt-{tbl['table_id']}",
@@ -416,66 +409,84 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
                 "rows": tbl["est_rows"],
                 "cols": tbl["col_count"],
                 "ts": created,
-            },
+            }
+        )
+        finding_rows.extend(
+            {
+                "id": str(uuid.uuid4()),
+                "se_id": se_id,
+                "tid": tbl["table_id"],
+                "col": col_name,
+                "cat": category,
+                "conf": confidence,
+                "status": pf_status,
+                "ts": created,
+            }
+            for (col_name, category, confidence) in tbl["findings"]
         )
 
-        for (col_name, category, confidence) in tbl["findings"]:
-            await db.execute(
-                text("""
-                    INSERT INTO pii_findings
-                        (id, scanner_event_id, table_id, column_name,
-                         pii_category, confidence, flagged, status, created_at)
-                    VALUES
-                        (:id, :se_id, :tid, :col,
-                         :cat, :conf, true, :status, :ts)
-                """),
-                {
-                    "id": str(uuid.uuid4()),
-                    "se_id": se_id,
-                    "tid": tbl["table_id"],
-                    "col": col_name,
-                    "cat": category,
-                    "conf": confidence,
-                    "status": pf_status,
-                    "ts": created,
-                },
-            )
+    await db.execute(
+        text("""
+            INSERT INTO scanner_events
+                (id, event_id, event_type, source_name, data_source_type,
+                 status, raw_event, owner_email, bucket,
+                 estimated_row_count, column_count, created_at, updated_at)
+            VALUES
+                (:id, :eid, 'table.created', :src, :dst,
+                 :status, CAST(:raw AS jsonb), :owner, :bucket,
+                 :rows, :cols, :ts, :ts)
+        """),
+        event_rows,
+    )
+    await db.execute(
+        text("""
+            INSERT INTO pii_findings
+                (id, scanner_event_id, table_id, column_name,
+                 pii_category, confidence, flagged, status, created_at)
+            VALUES
+                (:id, :se_id, :tid, :col,
+                 :cat, :conf, true, :status, :ts)
+        """),
+        finding_rows,
+    )
 
     # ── 3. Audit log (append-only -- always inserts, never deletes) ───────────
-    for tbl in _DEMO_TABLES:
-        for (event_type, actor, days_ago) in tbl["audit"]:
-            await db.execute(
-                text("""
-                    INSERT INTO audit_log
-                        (event_type, table_id, actor, timestamp, details_json)
-                    VALUES
-                        (:et, :tid, :actor, :ts, CAST(:details AS jsonb))
-                """),
-                {
-                    "et": event_type,
-                    "tid": tbl["table_id"],
-                    "actor": actor,
-                    "ts": _ago(days_ago),
-                    "details": json.dumps({
-                        "demo": True,
-                        "source": tbl["source_name"],
-                        "pii_categories": [f[1] for f in tbl["findings"]],
-                    }),
-                },
-            )
+    await db.execute(
+        text("""
+            INSERT INTO audit_log
+                (event_type, table_id, actor, timestamp, details_json)
+            VALUES
+                (:et, :tid, :actor, :ts, CAST(:details AS jsonb))
+        """),
+        [
+            {
+                "et": event_type,
+                "tid": tbl["table_id"],
+                "actor": actor,
+                "ts": _ago(days_ago),
+                "details": json.dumps({
+                    "demo": True,
+                    "source": tbl["source_name"],
+                    "pii_categories": [f[1] for f in tbl["findings"]],
+                }),
+            }
+            for tbl in _DEMO_TABLES
+            for (event_type, actor, days_ago) in tbl["audit"]
+        ],
+    )
 
     # ── 4. Quarantine manifest ─────────────────────────────────────────────────
-    for qm in _QUARANTINE_MANIFEST:
-        await db.execute(
-            text("""
-                INSERT INTO quarantine_manifest
-                    (id, table_id, source_s3_path, quarantine_s3_path,
-                     flagged_categories, file_count, total_bytes,
-                     status, quarantined_at)
-                VALUES
-                    (:id, :tid, :src, :dst, CAST(:cats AS jsonb),
-                     :files, :bytes, 'quarantined', :ts)
-            """),
+    await db.execute(
+        text("""
+            INSERT INTO quarantine_manifest
+                (id, table_id, source_s3_path, quarantine_s3_path,
+                 flagged_categories, file_count, total_bytes,
+                 status, quarantined_at)
+            VALUES
+                (:id, :tid, :src, :dst, CAST(:cats AS jsonb),
+                 :files, :bytes, 'quarantined', :ts)
+        """),
+        [
             {
                 "id": str(uuid.uuid4()),
                 "tid": qm["table_id"],
@@ -485,8 +496,10 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
                 "files": qm["file_count"],
                 "bytes": qm["total_bytes"],
                 "ts": _ago(qm["days_ago"]),
-            },
-        )
+            }
+            for qm in _QUARANTINE_MANIFEST
+        ],
+    )
 
     await db.commit()
 
