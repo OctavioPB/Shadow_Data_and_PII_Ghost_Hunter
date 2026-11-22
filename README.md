@@ -164,12 +164,14 @@ docker run --rm -v "$PWD:/opt/app" -w /opt/app \
    python -m pytest -o addopts='' --noconftest tests/orchestration"
 ```
 
-Dependency layout:
-- `requirements.txt`: full Python stack.
+Dependency layout (each file is audited separately with `pip-audit` in CI):
+- `requirements.txt`: core platform (API, scanner, data/ETL jobs).
 - `api/requirements.txt`: what the API image installs.
-- `requirements-dev.txt`: test and lint tools.
+- `requirements-ml.txt`: torch, transformers, scikit-learn and faker (inference and tests).
+- `requirements-train.txt`: the ML stack plus mlflow, used only by the training workflow. It is kept apart because mlflow 2.13 pins `pyarrow<16`.
+- `requirements-dev.txt`: core + ML + test and lint tools (`make install`).
 
-The Airflow providers are not pip-installed; they come with the `apache/airflow` image.
+The Airflow providers are not pip-installed; they come with the `apache/airflow` image. Install the ML files with `--extra-index-url https://download.pytorch.org/whl/cpu` to get CPU-only torch.
 
 ---
 
@@ -196,7 +198,7 @@ The Airflow providers are not pip-installed; they come with the `apache/airflow`
 
 - The `apache/airflow` image used by docker-compose has no pyspark or JVM. Locally, anonymization therefore fails and the remediation DAG falls back to quarantine plus DPO notification.
 - Automatic remediation covers S3 objects only. Catalog tables (Glue/Athena) are flagged and reported but not moved.
-- `pip-audit` reports known vulnerabilities in the pinned ML stack (torch, transformers, mlflow) and in parts of the web stack. Upgrades are pending.
+- The core and API dependencies have no known vulnerabilities. The pinned ML stack (torch 2.3, transformers 4.41, mlflow 2.13) still does: the fixes are major upgrades that must be re-validated against the trained model.
 - The user store is static (development only).
 
 ---

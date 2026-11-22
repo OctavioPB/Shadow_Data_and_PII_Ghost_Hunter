@@ -7,11 +7,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+# --extra-index-url (not -f): the PyTorch URL is a package index, not a page of
+# wheel links, so with -f pip could not find torch==2.3.0+cpu and the build failed.
 RUN pip install --no-cache-dir \
-    fastapi==0.111.0 \
-    uvicorn[standard]==0.29.0 \
-    pydantic==2.7.1 \
-    pydantic-settings==2.2.1 \
+    fastapi==0.165.0 \
+    starlette==1.10.0 \
+    uvicorn[standard]==0.54.0 \
+    pydantic==2.14.4 \
+    pydantic-settings==2.16.3 \
     torch==2.3.0+cpu \
     transformers==4.41.1 \
     prometheus_client==0.20.0 \
@@ -19,9 +22,9 @@ RUN pip install --no-cache-dir \
     boto3==1.34.101 \
     pandas==2.2.2 \
     numpy==1.26.4 \
-    pyarrow==16.1.0 \
-    python-dotenv==1.0.1 \
-    -f https://download.pytorch.org/whl/cpu
+    pyarrow==23.0.1 \
+    python-dotenv==1.2.4 \
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Copy only the ml package (no training data or model weights)
 COPY ml/ ./ml/

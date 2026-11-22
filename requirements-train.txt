@@ -1,0 +1,11 @@
+# Training pipeline (.github/workflows/train.yml): ML stack + experiment tracking.
+#
+# Kept out of requirements.txt and requirements-dev.txt on purpose: mlflow 2.13
+# requires pyarrow<16, which would hold the core stack on a vulnerable pyarrow.
+# mlflow 2.13 also has many advisories (fixes in 3.x); it is part of the
+# separate ML upgrade and is audited in non-blocking mode until then.
+-r requirements-ml.txt
+mlflow==2.13.0
+pandas==2.2.2
+numpy==1.26.4
+pyarrow==15.0.2

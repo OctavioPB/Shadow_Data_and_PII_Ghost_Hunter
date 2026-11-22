@@ -1,4 +1,5 @@
 -r requirements.txt
+-r requirements-ml.txt
 
 # ─── Testing ─────────────────────────────────
 pytest==8.2.0
@@ -13,9 +14,9 @@ black==24.4.2
 pre-commit==3.7.1
 
 # ─── ML (dev only) ───────────────────────────
-# torch, transformers, mlflow, scikit-learn, pyspark and jinja2 come from
-# requirements.txt — re-pinning them here with different versions made the
-# install unresolvable.
+# torch, transformers, scikit-learn and faker come from requirements-ml.txt;
+# mlflow is training-only (requirements-train.txt). Never re-pin them here:
+# different versions make the install unresolvable.
 datasets==2.19.1
 evaluate==0.4.2
 

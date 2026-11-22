@@ -6,9 +6,10 @@ import os
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jwt import PyJWTError
 
 log = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict[str, str
         if not email or not role:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         return {"email": email, "role": role, "name": payload.get("name", "")}
-    except JWTError:
+    except PyJWTError:  # bad signature, expired, malformed…
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
         ) from None

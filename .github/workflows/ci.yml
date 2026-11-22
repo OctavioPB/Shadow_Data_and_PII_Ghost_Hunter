@@ -56,8 +56,21 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
 
-      - name: Audit production dependencies
+      # One step per component so a failure points at the stack that needs work.
+      - name: Audit core dependencies (API, scanner, ETL)
         run: pip-audit -r requirements.txt --ignore-vuln PYSEC-2022-42974
+
+      - name: Audit API image dependencies
+        if: always()
+        run: pip-audit -r api/requirements.txt
+
+      - name: Audit ML dependencies (inference + tests)
+        if: always()
+        run: pip-audit -r requirements-ml.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Audit training dependencies
+        if: always()
+        run: pip-audit -r requirements-train.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
   # ─── Python tests ───────────────────────────────────────────────────────────
   python-test:

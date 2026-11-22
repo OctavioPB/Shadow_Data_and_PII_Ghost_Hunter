@@ -1,0 +1,12 @@
+# ML stack used by the inference service and the test suite.
+#
+# KNOWN VULNERABILITIES: torch 2.3 and transformers 4.41 have published
+# advisories whose fixes are major upgrades (torch >= 2.13, transformers 5.x).
+# They need re-validation against the trained model, so they are tracked in a
+# separate upgrade; until then CI audits this file in non-blocking mode.
+#
+# numpy is pinned to 1.26.4 in requirements.txt (torch 2.3 needs NumPy 1.x).
+torch==2.3.0
+transformers==4.41.1
+scikit-learn==1.5.0
+faker==24.9.0

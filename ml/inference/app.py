@@ -19,6 +19,8 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, HTTPException, Response
@@ -57,18 +59,9 @@ structlog.configure(
 log = structlog.get_logger()
 
 # ─── Application ──────────────────────────────────────────────────────────────
-app = FastAPI(
-    title="PII Inference Service",
-    description="Classifies column samples for PII using a fine-tuned DistilBERT model.",
-    version=os.environ.get("MODEL_VERSION", "dev"),
-    # Disable default /docs to avoid exposing sample values in Swagger UI
-    docs_url=None,
-    redoc_url=None,
-)
 
 
-@app.on_event("startup")
-async def _warmup_model() -> None:
+def _warmup_model() -> None:
     """Eagerly load the model so the first request is not slow."""
     from ml.inference.model_loader import get_pipeline
 
@@ -80,6 +73,24 @@ async def _warmup_model() -> None:
         log.info("model_loaded", duration_s=round(duration or 0, 2))
     except Exception as exc:
         log.warning("model_load_failed", error=str(exc))
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # lifespan replaces @app.on_event("startup"), which Starlette 1.0 removed.
+    _warmup_model()
+    yield
+
+
+app = FastAPI(
+    title="PII Inference Service",
+    description="Classifies column samples for PII using a fine-tuned DistilBERT model.",
+    version=os.environ.get("MODEL_VERSION", "dev"),
+    # Disable default /docs to avoid exposing sample values in Swagger UI
+    docs_url=None,
+    redoc_url=None,
+    lifespan=_lifespan,
+)
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
