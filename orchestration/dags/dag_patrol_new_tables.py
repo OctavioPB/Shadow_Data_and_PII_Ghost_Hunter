@@ -14,8 +14,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta
 
+from airflow.api.common.trigger_dag import trigger_dag as _trigger
 from airflow.decorators import dag, task
+from airflow.exceptions import DagRunAlreadyExists
 from airflow.providers.postgres.hooks.postgres import PostgresHook
+from airflow.utils import timezone
 
 log = logging.getLogger(__name__)
 
@@ -108,18 +111,20 @@ def patrol_new_tables() -> None:
         if not queued_events:
             return
 
-        from airflow.api.common.trigger_dag import trigger_dag as _trigger
-        from airflow.utils import timezone
-
         for event in queued_events:
             run_id = f"patrol__{event['event_id']}"
-            _trigger(
-                dag_id=_SAMPLING_DAG_ID,
-                run_id=run_id,
-                conf=event,
-                execution_date=timezone.utcnow(),
-                replace_microseconds=False,
-            )
+            try:
+                _trigger(
+                    dag_id=_SAMPLING_DAG_ID,
+                    run_id=run_id,
+                    conf=event,
+                    execution_date=timezone.utcnow(),
+                    replace_microseconds=False,
+                )
+            except DagRunAlreadyExists:
+                # A retry after a partial loop must not fail on runs it already made.
+                log.info("Run %s already exists — skipping", run_id)
+                continue
             log.info("Triggered %s run_id=%s", _SAMPLING_DAG_ID, run_id)
 
     events = fetch_pending_events()

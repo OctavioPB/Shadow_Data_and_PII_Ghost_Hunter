@@ -76,7 +76,15 @@ class BaseConsumer(ABC):
 
                 start = time.monotonic()
                 try:
-                    event = self._parse(msg.value())
+                    try:
+                        event = self._parse(msg.value())
+                    except (TypeError, AttributeError) as exc:
+                        # Structurally wrong payloads, e.g. {"detail": {"bucket": "x"}}
+                        # (str where a dict is expected). Uncaught, one poison message
+                        # crash-loops the consumer: the offset is never committed.
+                        # Only parse errors are treated this way, so a bug in
+                        # _handle() still surfaces instead of silently filling the DLQ.
+                        raise ValueError(f"malformed payload: {exc}") from exc
                     self._handle(event)
                     self._consumer.commit(message=msg)
                     events_consumed_total.labels(

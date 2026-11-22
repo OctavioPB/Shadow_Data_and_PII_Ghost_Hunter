@@ -229,6 +229,10 @@ _GENERATORS: dict[str, Callable[[str], str]] = {
     "NONE": _gen_none,
 }
 
+# Same label set as ml.data.pii_dataset.PII_LABELS (canonical sorted order),
+# defined here so the generator does not need torch/transformers to import.
+PII_LABELS: list[str] = sorted(_GENERATORS)
+
 
 # ─── Core generator ───────────────────────────────────────────────────────────
 

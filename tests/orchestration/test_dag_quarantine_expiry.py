@@ -38,6 +38,15 @@ def _make_row(table_id: str, days_ago: int, warning_sent: bool = False, expired:
     )
 
 
+def _s3_with_objects(*keys: str) -> MagicMock:
+    """S3 client mock whose list_objects_v2 paginator yields *keys*."""
+    s3 = MagicMock()
+    s3.get_paginator.return_value.paginate.return_value = [
+        {"Contents": [{"Key": k, "Size": 1} for k in keys]}
+    ]
+    return s3
+
+
 # ─── DAG structure ────────────────────────────────────────────────────────────
 
 
@@ -144,7 +153,7 @@ def test_move_to_expired_prefix_calls_copy_and_delete(mock_boto_client):
     import importlib
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
-    s3_mock = MagicMock()
+    s3_mock = _s3_with_objects("pending/tbl-003/part-0.parquet")
     mock_boto_client.return_value = s3_mock
 
     expired = [
@@ -159,13 +168,18 @@ def test_move_to_expired_prefix_calls_copy_and_delete(mock_boto_client):
         result = mod.move_to_expired_prefix.function(expired)
 
     assert result == ["tbl-003"]
+    # Objects under the prefix are moved one by one (the prefix is not a key).
+    s3_mock.get_paginator.return_value.paginate.assert_called_once_with(
+        Bucket="pii-quarantine", Prefix="pending/tbl-003/"
+    )
     s3_mock.copy_object.assert_called_once_with(
         Bucket="pii-quarantine",
-        CopySource={"Bucket": "pii-quarantine", "Key": "pending/tbl-003/"},
-        Key="expired/tbl-003/",
+        CopySource={"Bucket": "pii-quarantine", "Key": "pending/tbl-003/part-0.parquet"},
+        Key="expired/tbl-003/part-0.parquet",
+        ServerSideEncryption="AES256",
     )
     s3_mock.delete_object.assert_called_once_with(
-        Bucket="pii-quarantine", Key="pending/tbl-003/"
+        Bucket="pii-quarantine", Key="pending/tbl-003/part-0.parquet"
     )
 
 
@@ -199,6 +213,9 @@ def test_move_to_expired_prefix_handles_s3_error_gracefully(mock_boto_client):
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
     s3_mock = MagicMock()
+    s3_mock.get_paginator.return_value.paginate.return_value = [
+        {"Contents": [{"Key": "pending/tbl-err/part-0.parquet", "Size": 1}]}
+    ]
     s3_mock.copy_object.side_effect = Exception("NoSuchKey")
     mock_boto_client.return_value = s3_mock
 

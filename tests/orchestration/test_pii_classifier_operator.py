@@ -16,6 +16,10 @@ import pytest
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+# Airflow 2.8 pins SQLAlchemy<2, so it cannot share an env with the API; these
+# tests run in the `airflow-test` CI job (apache/airflow image) instead.
+pytest.importorskip("airflow", reason="apache-airflow not installed")
+
 
 def _make_parquet_bytes(df: pd.DataFrame) -> bytes:
     buf = io.BytesIO()

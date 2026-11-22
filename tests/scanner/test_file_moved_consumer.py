@@ -184,3 +184,43 @@ def test_handle_source_name_is_s3_uri(file_consumer):
         c._handle(event)
         kw = mock_upsert.call_args.kwargs
         assert kw["source_name"] == "s3://analytics/prod/orders/part-00.parquet"
+
+
+# ─── Poison messages (run loop) ──────────────────────────────────────────────
+
+
+def _run_once(consumer, payload: bytes) -> MagicMock:
+    """Drive BaseConsumer.run() for exactly one message."""
+    msg = MagicMock()
+    msg.error.return_value = None
+    msg.value.return_value = payload
+
+    def _poll(timeout):
+        consumer._running = False  # stop after this message
+        return msg
+
+    consumer._consumer.poll.side_effect = _poll
+    consumer._dlq_producer = MagicMock()
+    consumer.run()
+    return msg
+
+
+def test_structurally_wrong_payload_goes_to_dlq_and_is_committed(file_consumer):
+    """{"bucket": "x"} (str, not dict) raised TypeError and crash-looped the consumer."""
+    c, _, _ = file_consumer
+    msg = _run_once(c, json.dumps({"detail": {"bucket": "x", "object": {}}}).encode())
+
+    c._dlq_producer.produce.assert_called_once()
+    c._consumer.commit.assert_called_once_with(message=msg)
+
+
+def test_bug_in_handle_is_not_hidden_in_dlq(file_consumer):
+    """Only parse errors are dead-lettered; a TypeError raised by _handle() is a bug."""
+    c, _, _ = file_consumer
+    valid = {"id": "e1", "detail": {"bucket": {"name": "b"}, "object": {"key": "k.csv", "size": 1}}}
+    with patch.object(c, "_handle", side_effect=TypeError("bug")):
+        with pytest.raises(TypeError):
+            _run_once(c, json.dumps(valid).encode())
+
+    c._dlq_producer.produce.assert_not_called()
+    c._consumer.commit.assert_not_called()

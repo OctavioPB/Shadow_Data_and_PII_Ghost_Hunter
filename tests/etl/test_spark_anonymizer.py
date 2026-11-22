@@ -102,7 +102,7 @@ def test_run_spark_anonymization_skips_if_already_completed():
         result = run_spark_anonymization(
             table_id="tbl-001",
             source_path="s3://bucket/key/",
-            output_path="s3://bucket/key/",
+            output_path="s3://bucket/key__anonymized/",
             flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
             database_url="postgresql://localhost/test",
         )
@@ -135,7 +135,7 @@ def test_run_spark_anonymization_writes_audit_on_success(spark):
             run_spark_anonymization(
                 table_id="tbl-audit",
                 source_path="s3://b/k/",
-                output_path="s3://b/k/",
+                output_path="s3://b/k__anonymized/",
                 flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
                 database_url="postgresql://localhost/test",
                 spark_master="local[1]",
@@ -171,7 +171,7 @@ def test_audit_record_contains_no_raw_values(spark):
         run_spark_anonymization(
             table_id="tbl-priv",
             source_path="s3://b/k/",
-            output_path="s3://b/k/",
+            output_path="s3://b/k__anonymized/",
             flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
             database_url="postgresql://localhost/test",
             spark_master="local[1]",

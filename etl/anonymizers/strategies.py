@@ -23,7 +23,7 @@ import string
 _REDACTED = "[REDACTED]"
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")            # SHA-256 hex
 _MASKED_CARD_RE = re.compile(r"^\*{4}(-\*{4}){2}-\d{4}$")  # ****-****-****-1234
-_MASKED_PHONE_RE = re.compile(r"^\+\d{1,3}-\*+$")   # +1-**********
+_MASKED_PHONE_RE = re.compile(r"^(\+\d{1,3}-)?\*+$")   # +1-********** or *******
 
 
 def _is_already_redacted(value: str) -> bool:
@@ -121,13 +121,18 @@ def anonymize_phone(value: str | None) -> str:
         return _REDACTED
     if _is_already_masked_phone(value):
         return value
-    stripped = re.sub(r"[\s\-\.\(\)]", "", value)
-    if stripped.startswith("+"):
-        match = re.match(r"\+(\d{1,3})", stripped)
+    digits = re.sub(r"\D", "", value)
+    if value.lstrip().startswith("+") and digits:
+        # Country codes are 1-3 digits and cannot be told apart once the
+        # separators are gone ("+18005550199" is +1, not +180). Use the
+        # separator the caller wrote; without one fall back to E.164 shape:
+        # zones 1 (NANP) and 7 (RU/KZ) are single-digit, the rest use two.
+        match = re.match(r"\s*\+(\d{1,3})(?=[\s\-\.\(/])", value)
         if match:
-            cc = match.group(0)  # e.g. "+1" or "+55"
-            rest_len = len(stripped) - len(cc)
-            return f"{cc}-{'*' * rest_len}"
+            cc = match.group(1)
+        else:
+            cc = digits[:1] if digits[0] in "17" else digits[:2]
+        return f"+{cc}-{'*' * (len(digits) - len(cc))}"
     # No country code — mask everything
     digit_len = len(re.sub(r"\D", "", value))
     return "*" * max(digit_len, 4)

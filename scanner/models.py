@@ -1,6 +1,18 @@
 import uuid
 
-from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase
 
@@ -95,6 +107,10 @@ class PIIFinding(Base):
     """One row per column classification result from the inference service."""
 
     __tablename__ = "pii_findings"
+    # One finding per column per scan — makes classifier re-runs idempotent.
+    __table_args__ = (
+        UniqueConstraint("scanner_event_id", "column_name", name="uq_pii_findings_event_col"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     scanner_event_id = Column(
@@ -112,7 +128,7 @@ class PIIFinding(Base):
     column_name = Column(String(255), nullable=False)
     pii_category = Column(String(50), nullable=False)
     confidence = Column(Float, nullable=False)
-    flagged = Column(Integer, nullable=False, default=0)  # 0=False, 1=True (BOOLEAN in DB)
+    flagged = Column(Boolean, nullable=False, default=False)
     # sampled → classified → flagged | clean → quarantined → remediated
     status = Column(String(50), nullable=False, default="classified")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
@@ -136,6 +152,9 @@ class QuarantineManifest(Base):
     reviewed_by = Column(String(255), nullable=True)
     released_at = Column(DateTime(timezone=True), nullable=True)
     notes = Column(Text, nullable=True)
+    # Retention policy bookkeeping (dag_quarantine_expiry)
+    warning_sent_at = Column(DateTime(timezone=True), nullable=True)
+    expired_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class Notification(Base):

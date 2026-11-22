@@ -132,11 +132,20 @@ def _send_email(
 ) -> None:
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = "pii-hunter@noreply.internal"
+    msg["From"] = os.environ.get("NOTIFICATION_FROM_EMAIL", "pii-hunter@noreply.internal")
     msg["To"] = recipient
     msg.set_content("PII Alert — please view this email in an HTML-capable client.")
     msg.add_alternative(html_body, subtype="html")
     with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
+        # Upgrade to TLS when offered (port 587 submission): the alert reveals
+        # which tables hold PII, so it should not cross the network in clear.
+        smtp.ehlo()
+        if smtp.has_extn("starttls"):
+            smtp.starttls()
+            smtp.ehlo()
+        user = os.environ.get("SMTP_USER", "")
+        if user:
+            smtp.login(user, os.environ.get("SMTP_PASSWORD", ""))
         smtp.send_message(msg)
 
 
@@ -222,11 +231,14 @@ def send_dpo_notifications(
         slack_payload = _render_slack_message(ctx)
         success, error = _with_retry(_send_slack, slack_webhook_url, slack_payload)
         status = "sent" if success else "failed"
+        # Never persist the webhook URL: its path *is* the credential, and the
+        # first 64 chars already include part of the secret token.
         _record_notification(
-            engine, "slack", slack_webhook_url[:64], subject, ctx.table_id,
+            engine, "slack", "slack-webhook", subject, ctx.table_id,
             status, _MAX_RETRIES if not success else 1, error,
         )
         results["slack"] = {"status": status}
         log.info("Slack notification %s", status)
 
+    engine.dispose()
     return results

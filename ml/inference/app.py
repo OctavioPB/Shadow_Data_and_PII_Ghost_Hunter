@@ -98,8 +98,11 @@ async def metrics() -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
+# Plain `def` on purpose: model inference is CPU-bound and blocking. FastAPI
+# runs sync endpoints in its threadpool; an `async def` here would block the
+# event loop, stalling /health (liveness probes) and every concurrent request.
 @app.post("/infer", response_model=InferResponse)
-async def infer(request: InferRequest) -> InferResponse:
+def infer(request: InferRequest) -> InferResponse:
     t_start = time.monotonic()
     status = "success"
     results: list[ColumnResult] = []

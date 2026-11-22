@@ -1,8 +1,16 @@
 """
 PySpark anonymization job — S5-01.
 
-Reads a parquet dataset from S3, applies per-column PII anonymization
-strategies, writes the result back, and records an audit entry.
+Reads a dataset (parquet/csv/json) from S3, applies per-column PII
+anonymization strategies, writes it in the *same format* to a *different*
+output path, and records an audit entry. (dag_remediation later promotes the
+output into the original location, so readers of that location must keep
+finding the format they expect.)
+
+The output path must differ from the source: Spark evaluates lazily, so an
+in-place ``mode("overwrite")`` deletes the source files before they are read
+(Spark refuses it, or worse, loses data). dag_remediation writes to a staging
+prefix and promotes it once the raw copy is safely quarantined.
 
 Idempotency guarantee:
   - Each strategy function detects already-anonymized values and skips them.
@@ -13,7 +21,7 @@ Usage (spark-submit):
     spark-submit etl/anonymizers/spark_anonymizer.py \
         --table-id <uuid> \
         --source-path s3://data-lake/path/to/table/ \
-        --output-path s3://data-lake/path/to/table/ \
+        --output-path s3://data-lake/path/to/table__anonymized/ \
         --flagged-columns '[{"column_name":"email","pii_category":"EMAIL"}]' \
         --database-url postgresql://...
 
@@ -28,9 +36,20 @@ import logging
 import os
 from typing import Any
 
-from etl.anonymizers.strategies import anonymize_value, get_strategy
+from etl.anonymizers.strategies import get_strategy
+
+try:  # module-level so tests can patch it; pyspark is optional at import time
+    from pyspark.sql import SparkSession
+except ImportError:  # pragma: no cover - exercised only without pyspark
+    SparkSession = None  # type: ignore[assignment,misc]
 
 log = logging.getLogger(__name__)
+
+_READERS = {"parquet", "csv", "json"}
+
+
+def _norm_path(path: str) -> str:
+    return path.rstrip("/")
 
 
 # ─── Idempotency check ────────────────────────────────────────────────────────
@@ -40,15 +59,18 @@ def _already_anonymized(database_url: str, table_id: str) -> bool:
     import sqlalchemy as sa
 
     engine = sa.create_engine(database_url)
-    with engine.connect() as conn:
-        row = conn.execute(
-            sa.text(
-                "SELECT 1 FROM audit_log "
-                "WHERE event_type = 'anonymization_completed' AND table_id = :tid "
-                "LIMIT 1"
-            ),
-            {"tid": table_id},
-        ).fetchone()
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                sa.text(
+                    "SELECT 1 FROM audit_log "
+                    "WHERE event_type = 'anonymization_completed' AND table_id = :tid "
+                    "LIMIT 1"
+                ),
+                {"tid": table_id},
+            ).fetchone()
+    finally:
+        engine.dispose()
     return row is not None
 
 
@@ -96,22 +118,32 @@ def run_spark_anonymization(
     database_url: str,
     app_name: str = "pii-ghost-hunter-anonymizer",
     spark_master: str = "local[*]",
+    source_format: str = "parquet",
 ) -> dict[str, Any]:
     """
     Full anonymization pipeline:
       1. Idempotency check
-      2. Read parquet from *source_path*
+      2. Read *source_format* data from *source_path*
       3. Apply anonymization
-      4. Write to *output_path* (overwrite)
+      4. Write *source_format* data to *output_path* (overwrite; must differ from source)
       5. Write audit record
     Returns a summary dict (safe to log — no raw values).
     """
-    from pyspark.sql import SparkSession
+    if _norm_path(source_path) == _norm_path(output_path):
+        raise ValueError(
+            "output_path must differ from source_path: an in-place overwrite deletes "
+            "the source before Spark reads it. Write to a staging path instead."
+        )
+    if source_format not in _READERS:
+        raise ValueError(f"Unsupported source_format {source_format!r}; expected {_READERS}")
 
     # ── Idempotency: skip if already completed ────────────────────────────────
     if _already_anonymized(database_url, table_id):
         log.info("Anonymization already completed for table_id=%s — skipping", table_id)
         return {"table_id": table_id, "skipped": True, "reason": "already_anonymized"}
+
+    if SparkSession is None:
+        raise RuntimeError("pyspark is not installed")
 
     spark = (
         SparkSession.builder.appName(app_name)
@@ -123,7 +155,13 @@ def run_spark_anonymization(
 
     try:
         # ── Read ─────────────────────────────────────────────────────────────
-        df = spark.read.parquet(source_path)
+        reader = spark.read
+        if source_format == "csv":
+            df = reader.option("header", "true").csv(source_path)
+        elif source_format == "json":
+            df = reader.json(source_path)
+        else:
+            df = reader.parquet(source_path)
         original_count = df.count()
         log.info("Read %d rows from %s", original_count, source_path)
 
@@ -131,7 +169,13 @@ def run_spark_anonymization(
         df_anon = anonymize_dataframe(df, flagged_columns)
 
         # ── Write (overwrite) ─────────────────────────────────────────────────
-        df_anon.write.mode("overwrite").parquet(output_path)
+        writer = df_anon.write.mode("overwrite")
+        if source_format == "csv":
+            writer.option("header", "true").csv(output_path)
+        elif source_format == "json":
+            writer.json(output_path)
+        else:
+            writer.parquet(output_path)
         log.info("Wrote anonymized data to %s", output_path)
 
         # ── Audit record ──────────────────────────────────────────────────────
@@ -157,11 +201,15 @@ def _write_audit_record(database_url: str, table_id: str, summary: dict) -> None
 
     engine = sa.create_engine(database_url)
     with engine.begin() as conn:
+        # CAST(... AS jsonb), not ":details::jsonb": SQLAlchemy's text() does not
+        # recognise a bind parameter immediately followed by "::", so the
+        # literal ":details" reached Postgres and the INSERT always failed.
         conn.execute(
             sa.text(
                 """
                 INSERT INTO audit_log (event_type, table_id, actor, details_json)
-                VALUES ('anonymization_completed', :tid, 'etl:spark_anonymizer', :details::jsonb)
+                VALUES ('anonymization_completed', :tid, 'etl:spark_anonymizer',
+                        CAST(:details AS jsonb))
                 """
             ),
             {
@@ -176,6 +224,7 @@ def _write_audit_record(database_url: str, table_id: str, summary: dict) -> None
                 ),
             },
         )
+    engine.dispose()
 
 
 # ─── CLI entry point ──────────────────────────────────────────────────────────
@@ -195,6 +244,7 @@ def main() -> None:
         default=os.environ.get("DATABASE_URL"),
     )
     parser.add_argument("--spark-master", default="local[*]")
+    parser.add_argument("--source-format", default="parquet", choices=sorted(_READERS))
     args = parser.parse_args()
 
     if not args.database_url:
@@ -208,6 +258,7 @@ def main() -> None:
         flagged_columns=flagged,
         database_url=args.database_url,
         spark_master=args.spark_master,
+        source_format=args.source_format,
     )
     print(json.dumps(result, indent=2))
 
