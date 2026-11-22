@@ -1,6 +1,8 @@
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -12,7 +14,19 @@ select = [
 ]
 ignore = ["E501"]  # line length handled by black
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom (`x = Depends(...)` / `Query(...)` as
+# argument defaults) is evaluated once by design, which is what B008 flags.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "api.auth.require_role",
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["api", "scanner", "ml", "etl", "orchestration"]
+
+[tool.ruff.lint.per-file-ignores]
 "tests/**" = ["B011"]
 
 [tool.black]

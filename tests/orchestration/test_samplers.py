@@ -8,19 +8,18 @@ S2-03: verify samplers never write to source buckets.
 from __future__ import annotations
 
 import io
-import json
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
-
 
 # ─── S3Sampler ───────────────────────────────────────────────────────────────
 
 
 @pytest.fixture
 def s3_sampler():
-    import sys, os
+    import os
+    import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../orchestration/plugins"))
     from samplers.s3_sampler import S3Sampler
@@ -62,9 +61,9 @@ def test_s3_sampler_reads_source_never_writes_to_source(s3_sampler):
 
     # put_object must target ONLY the staging bucket, never the source
     for put_call in mock_s3.put_object.call_args_list:
-        assert put_call.kwargs.get("Bucket") == "pii-hunter-staging", (
-            "Sampler must only write to staging bucket, not to source"
-        )
+        assert (
+            put_call.kwargs.get("Bucket") == "pii-hunter-staging"
+        ), "Sampler must only write to staging bucket, not to source"
 
 
 def test_s3_sampler_limits_to_max_rows(s3_sampler):
@@ -90,9 +89,7 @@ def test_s3_sampler_limits_to_max_rows(s3_sampler):
 
 
 def test_s3_sampler_extracts_column_metadata(s3_sampler):
-    df = pd.DataFrame(
-        {"name": ["Alice"], "age": [30], "email": ["a@b.com"], "score": [0.99]}
-    )
+    df = pd.DataFrame({"name": ["Alice"], "age": [30], "email": ["a@b.com"], "score": [0.99]})
     source_body = _parquet_bytes(df)
 
     mock_s3 = MagicMock()
@@ -116,7 +113,8 @@ def test_s3_sampler_extracts_column_metadata(s3_sampler):
 
 
 def test_s3_sampler_invalid_uri_raises():
-    import sys, os
+    import os
+    import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../orchestration/plugins"))
     from samplers.s3_sampler import S3Sampler
@@ -144,7 +142,8 @@ def test_s3_sampler_unsupported_format_raises(s3_sampler):
 
 @pytest.fixture
 def athena_sampler():
-    import sys, os
+    import os
+    import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../orchestration/plugins"))
     from samplers.athena_sampler import AthenaSampler
@@ -158,14 +157,10 @@ def athena_sampler():
 def _mock_athena_client(columns: list[str], rows: list[list[str]]):
     client = MagicMock()
     client.start_query_execution.return_value = {"QueryExecutionId": "qe-001"}
-    client.get_query_execution.return_value = {
-        "QueryExecution": {"Status": {"State": "SUCCEEDED"}}
-    }
+    client.get_query_execution.return_value = {"QueryExecution": {"Status": {"State": "SUCCEEDED"}}}
     client.get_query_results.return_value = {
         "ResultSet": {
-            "ResultSetMetadata": {
-                "ColumnInfo": [{"Label": c} for c in columns]
-            },
+            "ResultSetMetadata": {"ColumnInfo": [{"Label": c} for c in columns]},
             "Rows": [
                 {"Data": [{"VarCharValue": c} for c in columns]},  # header
                 *[{"Data": [{"VarCharValue": v} for v in row]} for row in rows],
@@ -236,7 +231,8 @@ def test_athena_sampler_raises_on_query_failure(athena_sampler):
 
 
 def test_get_sampler_returns_athena_for_glue():
-    import sys, os
+    import os
+    import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../orchestration/plugins"))
     from samplers import get_sampler
@@ -247,7 +243,8 @@ def test_get_sampler_returns_athena_for_glue():
 
 
 def test_get_sampler_returns_s3_for_parquet():
-    import sys, os
+    import os
+    import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../orchestration/plugins"))
     from samplers import get_sampler
@@ -258,7 +255,8 @@ def test_get_sampler_returns_s3_for_parquet():
 
 
 def test_get_sampler_raises_for_unknown():
-    import sys, os
+    import os
+    import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../orchestration/plugins"))
     from samplers import get_sampler

@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
 
 import pytest
 
@@ -30,13 +29,11 @@ from testcontainers.postgres import PostgresContainer  # noqa: E402
 pytest.importorskip("alembic", reason="alembic not installed")
 pytest.importorskip("httpx", reason="httpx not installed")
 
-import subprocess  # noqa: E402
 import time  # noqa: E402
-from unittest.mock import AsyncMock, MagicMock  # noqa: E402
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from sqlalchemy import create_engine, text  # noqa: E402
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -62,15 +59,16 @@ def sync_engine(pg_container):
 
 @pytest.fixture(scope="module")
 def async_db_url(pg_container) -> str:
-    return pg_container.get_connection_url().replace(
-        "postgresql+psycopg2://", "postgresql+asyncpg://"
-    ).replace("postgresql://", "postgresql+asyncpg://")
+    return (
+        pg_container.get_connection_url()
+        .replace("postgresql+psycopg2://", "postgresql+asyncpg://")
+        .replace("postgresql://", "postgresql+asyncpg://")
+    )
 
 
 @pytest.fixture(scope="module", autouse=True)
 def apply_migrations(sync_engine):
     """Run Alembic migrations against the test container."""
-    import os
     from alembic import command
     from alembic.config import Config
 
@@ -91,14 +89,16 @@ def seeded_table_id(sync_engine) -> str:
     with sync_engine.begin() as conn:
         # Scanner event (what the Kafka consumer writes)
         conn.execute(
-            text("""
+            text(
+                """
                 INSERT INTO scanner_events
                     (id, event_id, event_type, source_name, data_source_type,
                      status, raw_event, owner_email, bucket)
                 VALUES
                     (:id, :event_id, 'table.created', 'prod.customer_pii_backup',
                      's3', 'flagged', :raw::jsonb, 'owner@company.com', 'data-lake-prod')
-            """),
+            """
+            ),
             {
                 "id": str(uuid.uuid4()),
                 "event_id": event_id,
@@ -119,13 +119,15 @@ def seeded_table_id(sync_engine) -> str:
             ("national_id", "SSN", 0.92),
         ]:
             conn.execute(
-                text("""
+                text(
+                    """
                     INSERT INTO pii_findings
                         (id, scanner_event_id, table_id, column_name,
                          pii_category, confidence, flagged, status)
                     VALUES
                         (:id, :se_id, :tid, :col, :cat, :conf, 1, 'flagged')
-                """),
+                """
+                ),
                 {
                     "id": str(uuid.uuid4()),
                     "se_id": str(se_id),
@@ -143,7 +145,6 @@ def seeded_table_id(sync_engine) -> str:
 async def api_client(async_db_url):
     """AsyncClient wired to the FastAPI app with a real DB."""
     from api.db import get_db
-    from api.auth import get_current_user
     from api.main import app
 
     # Real async engine pointing at the test container
@@ -195,8 +196,7 @@ async def test_flagged_table_appears_in_risk_inventory(
 
     table_ids = [item["table_id"] for item in body["items"]]
     assert seeded_table_id in table_ids, (
-        f"Seeded table {seeded_table_id!r} not found in risk inventory. "
-        f"Got: {table_ids}"
+        f"Seeded table {seeded_table_id!r} not found in risk inventory. " f"Got: {table_ids}"
     )
 
     # SLA: Risk Inventory must respond < 200ms (index scan on flagged=1)
@@ -204,9 +204,7 @@ async def test_flagged_table_appears_in_risk_inventory(
 
 
 @pytest.mark.asyncio
-async def test_pii_report_shows_correct_columns(
-    api_client, dpo_auth_headers, seeded_table_id
-):
+async def test_pii_report_shows_correct_columns(api_client, dpo_auth_headers, seeded_table_id):
     """
     [S7-03] PII report for the seeded table must show both flagged columns
     with correct categories and confidence scores.
@@ -270,13 +268,15 @@ async def test_manual_remediation_creates_audit_entry(
     # Verify audit log entry was written
     with sync_engine.connect() as conn:
         row = conn.execute(
-            text("""
+            text(
+                """
                 SELECT event_type, actor FROM audit_log
                 WHERE table_id = :tid
                   AND event_type = 'manual_quarantine_requested'
                 ORDER BY timestamp DESC
                 LIMIT 1
-            """),
+            """
+            ),
             {"tid": seeded_table_id},
         ).fetchone()
 
@@ -286,9 +286,7 @@ async def test_manual_remediation_creates_audit_entry(
 
 
 @pytest.mark.asyncio
-async def test_audit_log_shows_remediation_event(
-    api_client, dpo_auth_headers, seeded_table_id
-):
+async def test_audit_log_shows_remediation_event(api_client, dpo_auth_headers, seeded_table_id):
     """
     [S7-03] The audit log endpoint must surface the remediation event.
     """

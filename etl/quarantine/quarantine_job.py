@@ -24,7 +24,6 @@ import uuid
 from typing import Any
 
 import boto3
-import botocore
 import sqlalchemy as sa
 
 log = logging.getLogger(__name__)
@@ -34,6 +33,7 @@ _AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 
 # ─── Idempotency check ────────────────────────────────────────────────────────
+
 
 def _already_quarantined(database_url: str, table_id: str) -> bool:
     engine = sa.create_engine(database_url)
@@ -52,6 +52,7 @@ def _already_quarantined(database_url: str, table_id: str) -> bool:
 
 
 # ─── S3 helpers ───────────────────────────────────────────────────────────────
+
 
 def _list_s3_objects(s3_client, bucket: str, prefix: str) -> list[dict]:
     """List the object *prefix* itself or the objects under the folder *prefix*/.
@@ -108,7 +109,7 @@ def _move_s3_prefix(
     for obj in objects:
         key = obj["Key"]
         # A single-object prefix has no relative part: keep its file name.
-        relative = key[len(source_prefix):] or key.rsplit("/", 1)[-1]
+        relative = key[len(source_prefix) :] or key.rsplit("/", 1)[-1]
         dest_key = dest_prefix.rstrip("/") + "/" + relative.lstrip("/")
         _copy_object(s3_client, source_bucket, key, dest_bucket, dest_key)
         total_bytes += obj.get("Size", 0)
@@ -122,6 +123,7 @@ def _move_s3_prefix(
 
 
 # ─── Core quarantine logic ────────────────────────────────────────────────────
+
 
 def run_quarantine(
     table_id: str,
@@ -143,7 +145,7 @@ def run_quarantine(
     # ── Parse source S3 path ─────────────────────────────────────────────────
     if not source_s3_path.startswith("s3://"):
         raise ValueError(f"Expected s3:// URI, got: {source_s3_path!r}")
-    without = source_s3_path[len("s3://"):]
+    without = source_s3_path[len("s3://") :]
     source_bucket, _, source_prefix = without.partition("/")
     dest_prefix = f"pending/{table_id}/"
 

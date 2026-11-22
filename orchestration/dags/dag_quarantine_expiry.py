@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from airflow.decorators import dag, task
 from airflow.providers.postgres.hooks.postgres import PostgresHook
@@ -63,7 +63,7 @@ _OWNER_SQL = """
 
 
 def _as_utc(ts: datetime) -> datetime:
-    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+    return ts if ts.tzinfo else ts.replace(tzinfo=UTC)
 
 
 @task
@@ -84,7 +84,7 @@ def find_expiring_soon() -> list[dict]:
         parameters=(warning_threshold,),
     )
     log.info("Found %d quarantine entries approaching expiry", len(rows))
-    now = datetime.now(tz=timezone.utc)
+    now = datetime.now(tz=UTC)
     return [
         {
             "table_id": str(r[0]),
@@ -303,7 +303,7 @@ def mark_expired_in_db(table_ids: list[str]) -> None:
     dag_id="quarantine_expiry",
     description="[S8-04] Enforce 30-day quarantine retention policy",
     schedule="0 6 * * *",
-    start_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    start_date=datetime(2026, 1, 1, tzinfo=UTC),
     catchup=False,
     max_active_runs=1,
     default_args={

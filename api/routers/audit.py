@@ -61,13 +61,15 @@ async def audit_log(
     where, params = _build_filters(actor, event_type, table_id, date_from, date_to)
 
     rows = await db.execute(
-        text(f"""
+        text(
+            f"""
             SELECT id::text, event_type, table_id, actor, timestamp, details_json
             FROM audit_log
             WHERE {where}
             ORDER BY timestamp DESC
             LIMIT :limit OFFSET :offset
-        """),
+        """
+        ),
         {**params, "limit": size, "offset": (page - 1) * size},
     )
     total = await db.execute(text(f"SELECT count(*) FROM audit_log WHERE {where}"), params)
@@ -104,12 +106,14 @@ async def export_audit_log(
 ) -> StreamingResponse:
     where, params = _build_filters(actor, event_type, table_id, date_from, date_to)
     rows = await db.execute(
-        text(f"""
+        text(
+            f"""
             SELECT id::text, event_type, table_id, actor, timestamp
             FROM audit_log
             WHERE {where}
             ORDER BY timestamp DESC
-        """),
+        """
+        ),
         params,
     )
 
@@ -117,13 +121,15 @@ async def export_audit_log(
     writer = csv.writer(buf)
     writer.writerow(["id", "event_type", "table_id", "actor", "timestamp"])
     for r in rows.fetchall():
-        writer.writerow([
-            r.id,
-            csv_safe(r.event_type),
-            csv_safe(r.table_id or ""),
-            csv_safe(r.actor),
-            r.timestamp.isoformat(),
-        ])
+        writer.writerow(
+            [
+                r.id,
+                csv_safe(r.event_type),
+                csv_safe(r.table_id or ""),
+                csv_safe(r.actor),
+                r.timestamp.isoformat(),
+            ]
+        )
 
     return StreamingResponse(
         iter([buf.getvalue()]),

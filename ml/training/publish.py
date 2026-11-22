@@ -29,10 +29,10 @@ import time
 from pathlib import Path
 
 import boto3
-import botocore
 import sqlalchemy as sa
 
 # ─── S3 packaging ─────────────────────────────────────────────────────────────
+
 
 def _create_tarball(model_dir: str, dest_path: str) -> str:
     """Create a .tar.gz of *model_dir* at *dest_path* and return *dest_path*."""
@@ -67,6 +67,7 @@ def upload_to_s3(
 
 
 # ─── Model registry ───────────────────────────────────────────────────────────
+
 
 def register_model(
     database_url: str,
@@ -104,6 +105,7 @@ def register_model(
 
 
 # ─── Publish entry point ──────────────────────────────────────────────────────
+
 
 def publish(
     model_dir: str,
@@ -144,6 +146,7 @@ def publish(
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Publish PII classifier to S3 + model registry")

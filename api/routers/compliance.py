@@ -49,8 +49,11 @@ class RopaAnnotation(BaseModel):
 
 # ── ROPA ──────────────────────────────────────────────────────────────────────
 
+
 async def _ropa_rows(db: AsyncSession) -> list[dict[str, Any]]:
-    result = await db.execute(text("""
+    result = await db.execute(
+        text(
+            """
         SELECT
             se.source_name,
             se.data_source_type,
@@ -80,17 +83,17 @@ async def _ropa_rows(db: AsyncSession) -> list[dict[str, Any]]:
         GROUP BY se.source_name, se.data_source_type, se.owner_email,
                  ra.purpose, ra.legal_basis, ra.cross_border_transfer
         ORDER BY min(se.created_at) DESC
-    """))
+    """
+        )
+    )
     return [
         {
             "source_name": r.source_name,
             "data_source_type": r.data_source_type,
             "owner_email": r.owner_email,
             "pii_categories": list(r.pii_categories or []),
-            "first_detected_at": r.first_detected_at.isoformat()
-                if r.first_detected_at else None,
-            "last_scanned_at": r.last_scanned_at.isoformat()
-                if r.last_scanned_at else None,
+            "first_detected_at": r.first_detected_at.isoformat() if r.first_detected_at else None,
+            "last_scanned_at": r.last_scanned_at.isoformat() if r.last_scanned_at else None,
             "current_status": r.current_status,
             "purpose": r.purpose,
             "legal_basis": r.legal_basis,
@@ -123,22 +126,35 @@ async def export_ropa_csv(
     entries = await _ropa_rows(db)
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow([
-        "Data Source", "Type", "Owner",
-        "PII Categories", "First Detected", "Last Scanned",
-        "Status", "Processing Purpose", "Legal Basis",
-        "Cross-Border Transfer",
-    ])
+    w.writerow(
+        [
+            "Data Source",
+            "Type",
+            "Owner",
+            "PII Categories",
+            "First Detected",
+            "Last Scanned",
+            "Status",
+            "Processing Purpose",
+            "Legal Basis",
+            "Cross-Border Transfer",
+        ]
+    )
     for e in entries:
-        w.writerow([
-            csv_safe(e["source_name"]), e["data_source_type"], csv_safe(e["owner_email"] or ""),
-            ", ".join(e["pii_categories"]),
-            e["first_detected_at"] or "", e["last_scanned_at"] or "",
-            e["current_status"],
-            csv_safe(e["purpose"] or "(not documented)"),
-            e["legal_basis"] or "(not documented)",
-            "Yes" if e["cross_border_transfer"] else "No",
-        ])
+        w.writerow(
+            [
+                csv_safe(e["source_name"]),
+                e["data_source_type"],
+                csv_safe(e["owner_email"] or ""),
+                ", ".join(e["pii_categories"]),
+                e["first_detected_at"] or "",
+                e["last_scanned_at"] or "",
+                e["current_status"],
+                csv_safe(e["purpose"] or "(not documented)"),
+                e["legal_basis"] or "(not documented)",
+                "Yes" if e["cross_border_transfer"] else "No",
+            ]
+        )
     return StreamingResponse(
         iter([buf.getvalue()]),
         media_type="text/csv",
@@ -154,12 +170,14 @@ async def annotate_ropa(
     user: dict = Depends(require_role("dpo", "admin")),
 ) -> dict:
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO ropa_annotations
                 (source_name, purpose, legal_basis, cross_border_transfer,
                  annotated_by)
             VALUES (:sn, :purpose, :lb, :cbt, :actor)
-        """),
+        """
+        ),
         {
             "sn": source_name,
             "purpose": body.purpose,
@@ -169,10 +187,12 @@ async def annotate_ropa(
         },
     )
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO audit_log (event_type, table_id, actor, details_json)
             VALUES ('ropa_annotated', :sn, :actor, CAST(:d AS jsonb))
-        """),
+        """
+        ),
         {
             "sn": source_name,
             "actor": user["email"],
@@ -185,12 +205,15 @@ async def annotate_ropa(
 
 # ── Trends ────────────────────────────────────────────────────────────────────
 
+
 @router.get("/trends")
 async def compliance_trends(
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ) -> dict:
-    rows = await db.execute(text("""
+    rows = await db.execute(
+        text(
+            """
         WITH weeks AS (
             SELECT generate_series(
                 date_trunc('week', now() - interval '84 days'),
@@ -216,7 +239,9 @@ async def compliance_trends(
         FROM weeks w
         LEFT JOIN by_week b ON b.week_start = w.week_start
         ORDER BY w.week_start
-    """))
+    """
+        )
+    )
 
     cum_flagged = 0
     cum_remediated = 0
@@ -224,20 +249,21 @@ async def compliance_trends(
     for r in rows.fetchall():
         cum_flagged += r.new_flagged
         cum_remediated += r.new_remediated
-        score = (
-            round((cum_remediated / cum_flagged) * 100, 1)
-            if cum_flagged > 0 else 100.0
+        score = round((cum_remediated / cum_flagged) * 100, 1) if cum_flagged > 0 else 100.0
+        trend.append(
+            {
+                "week_start": r.week_start.isoformat(),
+                "new_flagged": r.new_flagged,
+                "new_remediated": r.new_remediated,
+                "cumulative_flagged": cum_flagged,
+                "cumulative_remediated": cum_remediated,
+                "compliance_score": score,
+            }
         )
-        trend.append({
-            "week_start": r.week_start.isoformat(),
-            "new_flagged": r.new_flagged,
-            "new_remediated": r.new_remediated,
-            "cumulative_flagged": cum_flagged,
-            "cumulative_remediated": cum_remediated,
-            "compliance_score": score,
-        })
 
-    ttr = await db.execute(text("""
+    ttr = await db.execute(
+        text(
+            """
         SELECT round(avg(
             extract(epoch from (r.timestamp - d.timestamp)) / 86400
         )::numeric, 1) AS avg_days
@@ -247,7 +273,9 @@ async def compliance_trends(
           AND r.event_type IN ('anonymization_completed', 'quarantine_completed')
           AND r.timestamp >= d.timestamp
           AND d.timestamp >= now() - interval '84 days'
-    """))
+    """
+        )
+    )
     ttr_row = ttr.fetchone()
 
     return {
@@ -258,19 +286,24 @@ async def compliance_trends(
 
 # ── Forecast ──────────────────────────────────────────────────────────────────
 
+
 @router.get("/forecast")
 async def compliance_forecast(
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ) -> dict:
-    totals = await db.execute(text("""
+    totals = await db.execute(
+        text(
+            """
         SELECT
             count(DISTINCT table_id)                                                   AS total_flagged,
             count(DISTINCT table_id)
                 FILTER (WHERE status IN ('remediated', 'quarantined'))                 AS total_remediated
         FROM pii_findings
         WHERE flagged = true
-    """))
+    """
+        )
+    )
     row = totals.fetchone()
     total_flagged = int(row.total_flagged or 0)
     total_remediated = int(row.total_remediated or 0)
@@ -279,23 +312,22 @@ async def compliance_forecast(
         round((total_remediated / total_flagged) * 100, 1) if total_flagged > 0 else 100.0
     )
 
-    vel = await db.execute(text("""
+    vel = await db.execute(
+        text(
+            """
         SELECT count(DISTINCT table_id) AS cnt
         FROM audit_log
         WHERE event_type IN ('anonymization_completed', 'quarantine_completed')
           AND timestamp >= now() - interval '28 days'
-    """))
+    """
+        )
+    )
     vel_row = vel.fetchone()
     per_week = round(int(vel_row.cnt or 0) / 4.0, 1)
 
     projected_30 = min(total_remediated + int(per_week * 4), total_flagged)
-    score_30 = (
-        round((projected_30 / total_flagged) * 100, 1) if total_flagged > 0 else 100.0
-    )
-    days_to_full = (
-        int(round(pending / (per_week / 7)))
-        if per_week > 0 and pending > 0 else None
-    )
+    score_30 = round((projected_30 / total_flagged) * 100, 1) if total_flagged > 0 else 100.0
+    days_to_full = int(round(pending / (per_week / 7))) if per_week > 0 and pending > 0 else None
 
     return {
         "current_score": current_score,
@@ -308,12 +340,15 @@ async def compliance_forecast(
 
 # ── Risk exposure ─────────────────────────────────────────────────────────────
 
+
 @router.get("/risk-exposure")
 async def risk_exposure(
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ) -> dict:
-    result = await db.execute(text("""
+    result = await db.execute(
+        text(
+            """
         -- EXISTS (not JOIN) so each table's rows are counted once, not once
         -- per flagged column.
         SELECT coalesce(sum(se.estimated_row_count), 0) AS total_records
@@ -324,7 +359,9 @@ async def risk_exposure(
               AND pf.flagged = true
               AND pf.status NOT IN ('remediated', 'quarantined')
         )
-    """))
+    """
+        )
+    )
     row = result.fetchone()
     total = int(row.total_records or 0)
     return {

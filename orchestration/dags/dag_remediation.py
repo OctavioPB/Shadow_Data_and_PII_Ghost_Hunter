@@ -42,7 +42,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from airflow.decorators import dag, task
 from airflow.operators.python import get_current_context
@@ -170,7 +170,9 @@ def remediation() -> None:
         return result
 
     @task
-    def promote_anonymized_output(run_conf: dict, anon_result: dict, quarantine_result: dict) -> dict:
+    def promote_anonymized_output(
+        run_conf: dict, anon_result: dict, quarantine_result: dict
+    ) -> dict:
         """
         Move the anonymized staging output into the original location, now that
         the raw data has been moved to quarantine. Idempotent: an empty staging
@@ -185,8 +187,8 @@ def remediation() -> None:
             return {"skipped": True, "reason": "no_source_path"}
 
         staging = _staging_path(source_path)
-        bucket, _, staging_prefix = staging[len("s3://"):].partition("/")
-        _, _, dest_prefix = source_path[len("s3://"):].partition("/")
+        bucket, _, staging_prefix = staging[len("s3://") :].partition("/")
+        _, _, dest_prefix = source_path[len("s3://") :].partition("/")
 
         s3 = boto3.client("s3", region_name=_AWS_REGION)
         file_count, total_bytes = _move_s3_prefix(
@@ -216,9 +218,7 @@ def remediation() -> None:
             """,
             parameters=[run_conf["table_id"]],
         )
-        findings = [
-            {"column_name": r[0], "pii_category": r[1], "confidence": r[2]} for r in rows
-        ]
+        findings = [{"column_name": r[0], "pii_category": r[1], "confidence": r[2]} for r in rows]
         max_confidence = max((f["confidence"] for f in findings), default=0.0)
 
         ctx = NotificationContext(
@@ -229,7 +229,7 @@ def remediation() -> None:
             owner_email=run_conf.get("owner_email"),
             findings=findings,
             dashboard_url=_DASHBOARD_URL,
-            detected_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            detected_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
         )
 
         results = send_dpo_notifications(

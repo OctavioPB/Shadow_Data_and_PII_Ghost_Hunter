@@ -4,7 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.middleware import SecurityHeadersMiddleware
-from api.routers import audit, auth, compliance, demo as _demo_router, dsar, risks
+from api.routers import audit, auth, compliance, dsar, risks
+from api.routers import demo as _demo_router
 
 _DOCS_ENABLED = os.environ.get("API_DOCS_ENABLED", "true").lower() in ("1", "true", "yes")
 _CORS_ORIGINS = [

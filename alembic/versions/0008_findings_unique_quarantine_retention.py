@@ -14,8 +14,9 @@ Create Date: 2026-11-22
    did not exist, so the 30-day retention policy never ran.
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "0008"
 down_revision = "0007"

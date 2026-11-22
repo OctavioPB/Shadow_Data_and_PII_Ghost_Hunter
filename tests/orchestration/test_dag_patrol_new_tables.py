@@ -7,9 +7,8 @@ in isolation using mocked Hooks.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -27,11 +26,11 @@ def _make_db_rows(n: int) -> list[tuple]:
 
     return [
         (
-            uuid.uuid4(),                    # id
-            f"event-{i:04d}",               # event_id
-            f"prod.table_{i}",              # source_name
-            "glue",                          # data_source_type
-            10 + i,                          # column_count
+            uuid.uuid4(),  # id
+            f"event-{i:04d}",  # event_id
+            f"prod.table_{i}",  # source_name
+            "glue",  # data_source_type
+            10 + i,  # column_count
         )
         for i in range(n)
     ]
@@ -55,8 +54,8 @@ def test_fetch_pending_events_returns_correct_shape():
         return_value=mock_hook,
     ):
         result = fetch_fn(
-            data_interval_start=datetime(2026, 5, 15, tzinfo=timezone.utc),
-            data_interval_end=datetime(2026, 5, 16, tzinfo=timezone.utc),
+            data_interval_start=datetime(2026, 5, 15, tzinfo=UTC),
+            data_interval_end=datetime(2026, 5, 16, tzinfo=UTC),
         )
 
     assert len(result) == 3
@@ -79,8 +78,8 @@ def test_fetch_pending_events_empty_window():
         return_value=mock_hook,
     ):
         result = fetch_fn(
-            data_interval_start=datetime(2026, 5, 15, tzinfo=timezone.utc),
-            data_interval_end=datetime(2026, 5, 16, tzinfo=timezone.utc),
+            data_interval_start=datetime(2026, 5, 15, tzinfo=UTC),
+            data_interval_end=datetime(2026, 5, 16, tzinfo=UTC),
         )
 
     assert result == []
@@ -95,8 +94,8 @@ def test_fetch_pending_events_uses_parameterized_query():
     mock_hook = MagicMock()
     mock_hook.get_records.return_value = []
 
-    start = datetime(2026, 5, 15, tzinfo=timezone.utc)
-    end = datetime(2026, 5, 16, tzinfo=timezone.utc)
+    start = datetime(2026, 5, 15, tzinfo=UTC)
+    end = datetime(2026, 5, 16, tzinfo=UTC)
 
     with patch(
         "orchestration.dags.dag_patrol_new_tables.PostgresHook",
@@ -120,8 +119,20 @@ def test_enqueue_for_sampling_updates_status_with_cas():
     enqueue_fn = dag.task_dict["enqueue_for_sampling"].python_callable
 
     events = [
-        {"id": "uuid-001", "event_id": "evt-001", "source_name": "db.t1", "data_source_type": "glue", "column_count": 5},
-        {"id": "uuid-002", "event_id": "evt-002", "source_name": "db.t2", "data_source_type": "athena", "column_count": 8},
+        {
+            "id": "uuid-001",
+            "event_id": "evt-001",
+            "source_name": "db.t1",
+            "data_source_type": "glue",
+            "column_count": 5,
+        },
+        {
+            "id": "uuid-002",
+            "event_id": "evt-002",
+            "source_name": "db.t2",
+            "data_source_type": "athena",
+            "column_count": 8,
+        },
     ]
     mock_hook = MagicMock()
 
@@ -157,15 +168,27 @@ def test_trigger_sampling_runs_one_trigger_per_event():
     trigger_fn = dag.task_dict["trigger_sampling_runs"].python_callable
 
     events = [
-        {"id": "u1", "event_id": "e1", "source_name": "db.t1", "data_source_type": "glue", "column_count": 3},
-        {"id": "u2", "event_id": "e2", "source_name": "db.t2", "data_source_type": "athena", "column_count": 7},
+        {
+            "id": "u1",
+            "event_id": "e1",
+            "source_name": "db.t1",
+            "data_source_type": "glue",
+            "column_count": 3,
+        },
+        {
+            "id": "u2",
+            "event_id": "e2",
+            "source_name": "db.t2",
+            "data_source_type": "athena",
+            "column_count": 7,
+        },
     ]
 
     with (
         patch("orchestration.dags.dag_patrol_new_tables.timezone") as mock_tz,
         patch("orchestration.dags.dag_patrol_new_tables._trigger") as mock_trigger,
     ):
-        mock_tz.utcnow.return_value = datetime(2026, 5, 16, tzinfo=timezone.utc)
+        mock_tz.utcnow.return_value = datetime(2026, 5, 16, tzinfo=UTC)
         trigger_fn(events)
 
     assert mock_trigger.call_count == 2
@@ -181,8 +204,20 @@ def test_trigger_sampling_runs_tolerates_existing_run():
 
     trigger_fn = patrol_new_tables.task_dict["trigger_sampling_runs"].python_callable
     events = [
-        {"id": "u1", "event_id": "e1", "source_name": "db.t1", "data_source_type": "glue", "column_count": 3},
-        {"id": "u2", "event_id": "e2", "source_name": "db.t2", "data_source_type": "glue", "column_count": 3},
+        {
+            "id": "u1",
+            "event_id": "e1",
+            "source_name": "db.t1",
+            "data_source_type": "glue",
+            "column_count": 3,
+        },
+        {
+            "id": "u2",
+            "event_id": "e2",
+            "source_name": "db.t2",
+            "data_source_type": "glue",
+            "column_count": 3,
+        },
     ]
     with patch("orchestration.dags.dag_patrol_new_tables._trigger") as mock_trigger:
         mock_trigger.side_effect = [DagRunAlreadyExists(MagicMock(), "x", "y"), None]

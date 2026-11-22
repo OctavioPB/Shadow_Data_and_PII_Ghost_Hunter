@@ -26,7 +26,7 @@ log = logging.getLogger(__name__)
 CONFIDENCE_THRESHOLD: float = float(os.environ.get("MODEL_CONFIDENCE_THRESHOLD", "0.85"))
 
 _lock = threading.Lock()
-_pipeline = None          # HuggingFace text-classification pipeline
+_pipeline = None  # HuggingFace text-classification pipeline
 _load_duration_s: float | None = None
 
 
@@ -86,7 +86,7 @@ def _download_from_s3(s3_uri: str) -> str:
     import boto3
 
     # Parse s3://bucket/key
-    without_scheme = s3_uri[len("s3://"):]
+    without_scheme = s3_uri[len("s3://") :]
     bucket, _, key = without_scheme.partition("/")
 
     region = os.environ.get("AWS_REGION", "us-east-1")

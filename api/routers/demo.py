@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
@@ -38,6 +38,7 @@ router = APIRouter(prefix="/api/v1/demo", tags=["demo"])
 def _demo_enabled() -> bool:
     """Re-read env var at request time so no server restart is needed."""
     return os.environ.get("DEMO_MODE", "false").lower() in ("true", "1", "yes")
+
 
 # ─── Synthetic dataset ────────────────────────────────────────────────────────
 
@@ -57,15 +58,15 @@ _DEMO_TABLES = [
         "days_ago": 3,
         "table_status": "flagged",
         "findings": [
-            ("email_address",        "EMAIL",       0.97),
-            ("social_security_no",   "SSN",         0.95),
-            ("credit_card_number",   "CREDIT_CARD", 0.93),
-            ("phone_number",         "PHONE",       0.91),
-            ("full_name",            "FULL_NAME",   0.89),
+            ("email_address", "EMAIL", 0.97),
+            ("social_security_no", "SSN", 0.95),
+            ("credit_card_number", "CREDIT_CARD", 0.93),
+            ("phone_number", "PHONE", 0.91),
+            ("full_name", "FULL_NAME", 0.89),
         ],
         "audit": [
-            ("pii_detected",   "system",             3.0),
-            ("dpo_notified",   "system",             3.0),
+            ("pii_detected", "system", 3.0),
+            ("dpo_notified", "system", 3.0),
         ],
     },
     # ── Staging export left after a Q4 migration ─────────────────────────────
@@ -80,13 +81,13 @@ _DEMO_TABLES = [
         "days_ago": 7,
         "table_status": "flagged",
         "findings": [
-            ("email",         "EMAIL",        0.94),
-            ("dob",           "DATE_OF_BIRTH",0.88),
-            ("full_name",     "FULL_NAME",    0.86),
+            ("email", "EMAIL", 0.94),
+            ("dob", "DATE_OF_BIRTH", 0.88),
+            ("full_name", "FULL_NAME", 0.86),
         ],
         "audit": [
-            ("pii_detected",  "system",  7.0),
-            ("dpo_notified",  "system",  7.0),
+            ("pii_detected", "system", 7.0),
+            ("dpo_notified", "system", 7.0),
         ],
     },
     # ── Old migration temp table quarantined for legal hold ───────────────────
@@ -101,14 +102,14 @@ _DEMO_TABLES = [
         "days_ago": 22,
         "table_status": "quarantined",
         "findings": [
-            ("ssn",           "SSN",         0.96),
-            ("passport_no",   "PASSPORT",    0.94),
-            ("birth_date",    "DATE_OF_BIRTH",0.91),
+            ("ssn", "SSN", 0.96),
+            ("passport_no", "PASSPORT", 0.94),
+            ("birth_date", "DATE_OF_BIRTH", 0.91),
         ],
         "audit": [
-            ("pii_detected",              "system",           22.0),
-            ("manual_quarantine_requested","dpo@company.com", 21.8),
-            ("quarantine_completed",       "system",          21.5),
+            ("pii_detected", "system", 22.0),
+            ("manual_quarantine_requested", "dpo@company.com", 21.8),
+            ("quarantine_completed", "system", 21.5),
         ],
     },
     # ── Redshift archive of all historical payments ───────────────────────────
@@ -123,12 +124,12 @@ _DEMO_TABLES = [
         "days_ago": 5,
         "table_status": "flagged",
         "findings": [
-            ("card_number",       "CREDIT_CARD",  0.96),
+            ("card_number", "CREDIT_CARD", 0.96),
             ("bank_account_iban", "BANK_ACCOUNT", 0.91),
         ],
         "audit": [
-            ("pii_detected",  "system",  5.0),
-            ("dpo_notified",  "system",  5.0),
+            ("pii_detected", "system", 5.0),
+            ("dpo_notified", "system", 5.0),
         ],
     },
     # ── Developer test dump with full PII spread ─────────────────────────────
@@ -143,14 +144,14 @@ _DEMO_TABLES = [
         "days_ago": 12,
         "table_status": "flagged",
         "findings": [
-            ("email",     "EMAIL",       0.92),
-            ("ssn",       "SSN",         0.90),
-            ("card",      "CREDIT_CARD", 0.88),
-            ("phone",     "PHONE",       0.86),
+            ("email", "EMAIL", 0.92),
+            ("ssn", "SSN", 0.90),
+            ("card", "CREDIT_CARD", 0.88),
+            ("phone", "PHONE", 0.86),
         ],
         "audit": [
-            ("pii_detected",  "system",  12.0),
-            ("dpo_notified",  "system",  12.0),
+            ("pii_detected", "system", 12.0),
+            ("dpo_notified", "system", 12.0),
         ],
     },
     # ── ML training features containing email + name ─────────────────────────
@@ -165,12 +166,12 @@ _DEMO_TABLES = [
         "days_ago": 9,
         "table_status": "flagged",
         "findings": [
-            ("user_email", "EMAIL",     0.91),
-            ("user_name",  "FULL_NAME", 0.87),
+            ("user_email", "EMAIL", 0.91),
+            ("user_name", "FULL_NAME", 0.87),
         ],
         "audit": [
-            ("pii_detected",  "system",  9.0),
-            ("dpo_notified",  "system",  9.0),
+            ("pii_detected", "system", 9.0),
+            ("dpo_notified", "system", 9.0),
         ],
     },
     # ── BI warehouse with demographic attributes ──────────────────────────────
@@ -185,13 +186,13 @@ _DEMO_TABLES = [
         "days_ago": 4,
         "table_status": "flagged",
         "findings": [
-            ("customer_name",  "FULL_NAME", 0.90),
-            ("mobile_phone",   "PHONE",     0.87),
-            ("home_address",   "ADDRESS",   0.84),
+            ("customer_name", "FULL_NAME", 0.90),
+            ("mobile_phone", "PHONE", 0.87),
+            ("home_address", "ADDRESS", 0.84),
         ],
         "audit": [
-            ("pii_detected",  "system",  4.0),
-            ("dpo_notified",  "system",  4.0),
+            ("pii_detected", "system", 4.0),
+            ("dpo_notified", "system", 4.0),
         ],
     },
     # ── A/B test cohort with emails and DOBs ─────────────────────────────────
@@ -206,11 +207,11 @@ _DEMO_TABLES = [
         "days_ago": 6,
         "table_status": "flagged",
         "findings": [
-            ("contact_email", "EMAIL",        0.92),
-            ("date_of_birth", "DATE_OF_BIRTH",0.85),
+            ("contact_email", "EMAIL", 0.92),
+            ("date_of_birth", "DATE_OF_BIRTH", 0.85),
         ],
         "audit": [
-            ("pii_detected",  "system",  6.0),
+            ("pii_detected", "system", 6.0),
         ],
     },
     # ── Clickstream PII export quarantined pending legal review ───────────────
@@ -225,13 +226,13 @@ _DEMO_TABLES = [
         "days_ago": 30,
         "table_status": "quarantined",
         "findings": [
-            ("email",  "EMAIL", 0.95),
-            ("phone",  "PHONE", 0.92),
+            ("email", "EMAIL", 0.95),
+            ("phone", "PHONE", 0.92),
         ],
         "audit": [
-            ("pii_detected",               "system",           30.0),
+            ("pii_detected", "system", 30.0),
             ("manual_quarantine_requested", "dpo@company.com", 29.8),
-            ("quarantine_completed",        "system",          29.5),
+            ("quarantine_completed", "system", 29.5),
         ],
     },
     # ── Email campaign source table -- remediated (anonymized) ────────────────
@@ -249,9 +250,9 @@ _DEMO_TABLES = [
             ("recipient_email", "EMAIL", 0.96),
         ],
         "audit": [
-            ("pii_detected",              "system",           38.0),
+            ("pii_detected", "system", 38.0),
             ("manual_anonymize_requested", "dpo@company.com", 37.5),
-            ("anonymization_completed",    "system",          37.0),
+            ("anonymization_completed", "system", 37.0),
         ],
     },
     # ── GDPR compliance report (ironic) -- remediated ─────────────────────────
@@ -266,13 +267,13 @@ _DEMO_TABLES = [
         "days_ago": 44,
         "table_status": "remediated",
         "findings": [
-            ("national_id",   "SSN",          0.93),
-            ("iban_number",   "BANK_ACCOUNT", 0.90),
+            ("national_id", "SSN", 0.93),
+            ("iban_number", "BANK_ACCOUNT", 0.90),
         ],
         "audit": [
-            ("pii_detected",              "system",           44.0),
+            ("pii_detected", "system", 44.0),
             ("manual_anonymize_requested", "dpo@company.com", 43.5),
-            ("anonymization_completed",    "system",          43.0),
+            ("anonymization_completed", "system", 43.0),
         ],
     },
     # ── 2022 customer backup -- remediated (old SHA-256 hashed) ──────────────
@@ -287,14 +288,14 @@ _DEMO_TABLES = [
         "days_ago": 41,
         "table_status": "remediated",
         "findings": [
-            ("email",      "EMAIL",     0.94),
-            ("name",       "FULL_NAME", 0.92),
-            ("mobile",     "PHONE",     0.88),
+            ("email", "EMAIL", 0.94),
+            ("name", "FULL_NAME", 0.92),
+            ("mobile", "PHONE", 0.88),
         ],
         "audit": [
-            ("pii_detected",              "system",           41.0),
+            ("pii_detected", "system", 41.0),
             ("manual_anonymize_requested", "dpo@company.com", 40.5),
-            ("anonymization_completed",    "system",          40.0),
+            ("anonymization_completed", "system", 40.0),
         ],
     },
 ]
@@ -341,7 +342,7 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
 
     # Relative timestamps are computed per request: a module-level "now" froze
     # at import time, so re-seeding a long-running server produced stale data.
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     def _ago(days: float) -> datetime:
         return now - timedelta(days=days)
@@ -352,10 +353,12 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
     # filtering on status = 'quarantined' never fails, so the constraint
     # definition itself has to be inspected.)
     constraint = await db.execute(
-        text("""
+        text(
+            """
             SELECT pg_get_constraintdef(oid) FROM pg_constraint
             WHERE conname = 'chk_pii_findings_status'
-        """)
+        """
+        )
     )
     constraint_def = constraint.scalar() or ""
     quarantine_status = (
@@ -366,20 +369,18 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
     # Audit log is append-only (DB trigger prevents DELETE) -- skip it.
     # scanner_events rows are tagged with raw_event->>'demo' = 'true'.
     await db.execute(
-        text("""
+        text(
+            """
             DELETE FROM pii_findings
             WHERE scanner_event_id IN (
                 SELECT id FROM scanner_events
                 WHERE raw_event->>'demo' = 'true'
             )
-        """)
+        """
+        )
     )
-    await db.execute(
-        text("DELETE FROM scanner_events WHERE raw_event->>'demo' = 'true'")
-    )
-    await db.execute(
-        text("DELETE FROM quarantine_manifest WHERE table_id LIKE 'tbl-demo-%'")
-    )
+    await db.execute(text("DELETE FROM scanner_events WHERE raw_event->>'demo' = 'true'"))
+    await db.execute(text("DELETE FROM quarantine_manifest WHERE table_id LIKE 'tbl-demo-%'"))
 
     # ── 2. Insert scanner_events + pii_findings (batched: one round trip each)
     event_rows: list[dict] = []
@@ -399,11 +400,13 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
                 "src": tbl["source_name"],
                 "dst": tbl["data_source_type"],
                 "status": raw_status,
-                "raw": json.dumps({
-                    "demo": "true",
-                    "table": tbl["table_id"],
-                    "created_at": created.isoformat(),
-                }),
+                "raw": json.dumps(
+                    {
+                        "demo": "true",
+                        "table": tbl["table_id"],
+                        "created_at": created.isoformat(),
+                    }
+                ),
                 "owner": tbl["owner_email"],
                 "bucket": tbl["bucket"],
                 "rows": tbl["est_rows"],
@@ -426,7 +429,8 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
         )
 
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO scanner_events
                 (id, event_id, event_type, source_name, data_source_type,
                  status, raw_event, owner_email, bucket,
@@ -435,40 +439,47 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
                 (:id, :eid, 'table.created', :src, :dst,
                  :status, CAST(:raw AS jsonb), :owner, :bucket,
                  :rows, :cols, :ts, :ts)
-        """),
+        """
+        ),
         event_rows,
     )
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO pii_findings
                 (id, scanner_event_id, table_id, column_name,
                  pii_category, confidence, flagged, status, created_at)
             VALUES
                 (:id, :se_id, :tid, :col,
                  :cat, :conf, true, :status, :ts)
-        """),
+        """
+        ),
         finding_rows,
     )
 
     # ── 3. Audit log (append-only -- always inserts, never deletes) ───────────
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO audit_log
                 (event_type, table_id, actor, timestamp, details_json)
             VALUES
                 (:et, :tid, :actor, :ts, CAST(:details AS jsonb))
-        """),
+        """
+        ),
         [
             {
                 "et": event_type,
                 "tid": tbl["table_id"],
                 "actor": actor,
                 "ts": _ago(days_ago),
-                "details": json.dumps({
-                    "demo": True,
-                    "source": tbl["source_name"],
-                    "pii_categories": [f[1] for f in tbl["findings"]],
-                }),
+                "details": json.dumps(
+                    {
+                        "demo": True,
+                        "source": tbl["source_name"],
+                        "pii_categories": [f[1] for f in tbl["findings"]],
+                    }
+                ),
             }
             for tbl in _DEMO_TABLES
             for (event_type, actor, days_ago) in tbl["audit"]
@@ -477,7 +488,8 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
 
     # ── 4. Quarantine manifest ─────────────────────────────────────────────────
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO quarantine_manifest
                 (id, table_id, source_s3_path, quarantine_s3_path,
                  flagged_categories, file_count, total_bytes,
@@ -485,7 +497,8 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
             VALUES
                 (:id, :tid, :src, :dst, CAST(:cats AS jsonb),
                  :files, :bytes, 'quarantined', :ts)
-        """),
+        """
+        ),
         [
             {
                 "id": str(uuid.uuid4()),
@@ -504,11 +517,13 @@ async def seed_demo(db: AsyncSession = Depends(get_db)) -> dict:
     await db.commit()
 
     # ── 5. Issue a DPO JWT so the browser signs in immediately ────────────────
-    token = create_access_token({
-        "sub": "dpo@company.com",
-        "role": "dpo",
-        "name": "Demo DPO",
-    })
+    token = create_access_token(
+        {
+            "sub": "dpo@company.com",
+            "role": "dpo",
+            "name": "Demo DPO",
+        }
+    )
 
     return {
         "access_token": token,

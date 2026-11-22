@@ -36,9 +36,7 @@ class ScannerEvent(Base):
     file_format = Column(String(50), nullable=True)
     estimated_row_count = Column(BigInteger, nullable=True)
     column_count = Column(Integer, nullable=True)
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(
         DateTime(timezone=True),
         nullable=False,
@@ -63,9 +61,7 @@ class ColumnSample(Base):
     sample_count = Column(Integer, nullable=True)
     sample_s3_path = Column(String(1000), nullable=True)
     status = Column(String(50), nullable=False, default="sampled")
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 class AuditLog(Base):

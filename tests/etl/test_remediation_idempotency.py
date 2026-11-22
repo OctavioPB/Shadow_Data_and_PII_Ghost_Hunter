@@ -13,16 +13,15 @@ All DB and S3 calls are mocked.
 
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from etl.anonymizers.spark_anonymizer import run_spark_anonymization
 from etl.quarantine.quarantine_job import run_quarantine
 
-
 # ─── Helpers ─────────────────────────────────────────────────────────────────
+
 
 def _make_db_mock(already_done: bool = False):
     mock_conn = MagicMock()
@@ -52,6 +51,7 @@ def _make_s3_mock(objects=None):
 
 # ─── [S5-04] Anonymization idempotency ───────────────────────────────────────
 
+
 def test_anonymization_double_run_second_is_noop():
     """Running anonymization twice must skip on the second call."""
     # First run: not yet done
@@ -65,8 +65,9 @@ def test_anonymization_double_run_second_is_noop():
         ),
     ):
         mock_spark = MagicMock()
-        MockSpark.builder.appName.return_value.master.return_value\
-            .config.return_value.getOrCreate.return_value = mock_spark
+        MockSpark.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = (
+            mock_spark
+        )
         df = MagicMock()
         df.count.return_value = 10
         mock_spark.read.parquet.return_value = df
@@ -113,6 +114,7 @@ def test_anonymization_no_spark_started_on_second_run():
 
 
 # ─── [S5-04] Quarantine idempotency ──────────────────────────────────────────
+
 
 def test_quarantine_double_run_second_is_noop():
     """Quarantine job must return 'already_quarantined' on second call."""
@@ -169,6 +171,7 @@ def test_quarantine_s3_not_called_on_second_run():
 
 # ─── [S5-04] Partial failure + re-run ────────────────────────────────────────
 
+
 def test_anonymization_partial_failure_then_rerun_completes():
     """
     Simulate: first run raises mid-way (Spark write fails).
@@ -184,14 +187,15 @@ def test_anonymization_partial_failure_then_rerun_completes():
         ),
     ):
         mock_spark = MagicMock()
-        MockSpark.builder.appName.return_value.master.return_value\
-            .config.return_value.getOrCreate.return_value = mock_spark
+        MockSpark.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = (
+            mock_spark
+        )
         df = MagicMock()
         df.count.return_value = 5
         mock_spark.read.parquet.return_value = df
         # Simulate write failure
-        df.withColumn.return_value.write.mode.return_value.parquet.side_effect = (
-            OSError("S3 write failed")
+        df.withColumn.return_value.write.mode.return_value.parquet.side_effect = OSError(
+            "S3 write failed"
         )
 
         with pytest.raises(OSError):
@@ -214,8 +218,9 @@ def test_anonymization_partial_failure_then_rerun_completes():
         ),
     ):
         mock_spark2 = MagicMock()
-        MockSpark2.builder.appName.return_value.master.return_value\
-            .config.return_value.getOrCreate.return_value = mock_spark2
+        MockSpark2.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = (
+            mock_spark2
+        )
         df2 = MagicMock()
         df2.count.return_value = 5
         mock_spark2.read.parquet.return_value = df2
@@ -281,6 +286,7 @@ def test_quarantine_partial_failure_then_rerun_completes():
 
 # ─── Regression: unsafe paths ────────────────────────────────────────────────
 
+
 def test_anonymization_rejects_in_place_overwrite():
     """Writing to the source path would delete the data before Spark reads it."""
     with patch("etl.anonymizers.spark_anonymizer._already_anonymized") as already:
@@ -299,10 +305,12 @@ def test_quarantine_does_not_move_sibling_prefixes():
     """s3://b/data/users must not sweep up s3://b/data/users_backup/…"""
     from etl.quarantine.quarantine_job import _move_s3_prefix
 
-    mock_s3 = _make_s3_mock([
-        {"Key": "data/users/part-0.parquet", "Size": 10},
-        {"Key": "data/users_backup/part-0.parquet", "Size": 99},
-    ])
+    mock_s3 = _make_s3_mock(
+        [
+            {"Key": "data/users/part-0.parquet", "Size": 10},
+            {"Key": "data/users_backup/part-0.parquet", "Size": 99},
+        ]
+    )
     count, size = _move_s3_prefix(mock_s3, "b", "data/users", "q", "pending/t/")
 
     assert (count, size) == (1, 10)

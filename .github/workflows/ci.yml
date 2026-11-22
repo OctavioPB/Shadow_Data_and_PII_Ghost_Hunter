@@ -31,7 +31,9 @@ jobs:
           cache: pip
 
       - name: Install linting tools
-        run: pip install ruff black
+        # Same versions as requirements-dev.txt / .pre-commit-config.yaml, so CI
+        # and local runs apply identical rules.
+        run: pip install ruff==0.4.4 black==24.4.2
 
       - name: ruff check
         run: ruff check .

@@ -47,6 +47,7 @@ _MIN_F1_TARGET = 0.90
 
 # ─── Metrics ──────────────────────────────────────────────────────────────────
 
+
 def _compute_metrics(eval_pred: tuple) -> dict[str, float]:
     logits, labels = eval_pred
     preds = np.argmax(logits, axis=-1)
@@ -61,6 +62,7 @@ def _compute_metrics(eval_pred: tuple) -> dict[str, float]:
 
 
 # ─── Training entry point ─────────────────────────────────────────────────────
+
 
 def train(
     data_dir: str,
@@ -202,6 +204,7 @@ def train(
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train PII classifier")

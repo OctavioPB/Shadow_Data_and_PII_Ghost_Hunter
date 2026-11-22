@@ -128,9 +128,11 @@ def test_run_sampling_result_contains_no_raw_values():
     # result["columns"] must be a list of dicts with only name/dtype/sample_count
     assert isinstance(result["columns"], list)
     for c in result["columns"]:
-        assert set(c.keys()) == {"name", "dtype", "sample_count"}, (
-            "Column metadata must not include raw sample values"
-        )
+        assert set(c.keys()) == {
+            "name",
+            "dtype",
+            "sample_count",
+        }, "Column metadata must not include raw sample values"
 
 
 # ─── persist_column_samples ──────────────────────────────────────────────────

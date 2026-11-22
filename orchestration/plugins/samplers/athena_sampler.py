@@ -4,7 +4,6 @@ import time
 
 import boto3
 import pandas as pd
-
 from samplers.base_sampler import BaseSampler, SampleResult
 
 logger = logging.getLogger(__name__)
@@ -46,9 +45,7 @@ class AthenaSampler(BaseSampler):
                 # Blocks injection such as "db.t UNION SELECT * FROM other.secrets"
                 raise ValueError(f"Invalid Athena identifier: {ident!r}")
 
-        query = (
-            f'SELECT * FROM "{database}"."{table}" ORDER BY rand() LIMIT {self.MAX_ROWS}'  # noqa: S608
-        )
+        query = f'SELECT * FROM "{database}"."{table}" ORDER BY rand() LIMIT {self.MAX_ROWS}'  # noqa: S608
 
         athena = boto3.client("athena", region_name=self.aws_region)
         response = athena.start_query_execution(
@@ -82,9 +79,7 @@ class AthenaSampler(BaseSampler):
                 raise RuntimeError(f"Athena query {execution_id} {state}: {reason}")
             time.sleep(_POLL_INTERVAL_S)
         else:
-            raise TimeoutError(
-                f"Athena query {execution_id} timed out after {_QUERY_TIMEOUT_S}s"
-            )
+            raise TimeoutError(f"Athena query {execution_id} timed out after {_QUERY_TIMEOUT_S}s")
 
         results = athena.get_query_results(QueryExecutionId=execution_id)
         metadata = results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]
@@ -95,9 +90,7 @@ class AthenaSampler(BaseSampler):
         # NextToken to get the full MAX_ROWS sample.
         next_token = results.get("NextToken")
         while isinstance(next_token, str) and next_token:
-            page = athena.get_query_results(
-                QueryExecutionId=execution_id, NextToken=next_token
-            )
+            page = athena.get_query_results(QueryExecutionId=execution_id, NextToken=next_token)
             raw_rows.extend(page["ResultSet"]["Rows"])
             next_token = page.get("NextToken")
 

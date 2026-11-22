@@ -1,4 +1,3 @@
-import json
 import logging
 from pathlib import Path
 
@@ -39,9 +38,7 @@ class PIICandidateProducer:
 
         schema_str = _SCHEMA_PATH.read_text()
 
-        schema_registry_client = SchemaRegistryClient(
-            {"url": settings.kafka_schema_registry_url}
-        )
+        schema_registry_client = SchemaRegistryClient({"url": settings.kafka_schema_registry_url})
         self._serializer = AvroSerializer(
             schema_registry_client,
             schema_str,

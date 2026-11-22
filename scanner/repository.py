@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
@@ -15,11 +15,11 @@ def upsert_scanner_event(
     source_name: str,
     data_source_type: str,
     raw_event: dict[str, Any],
-    owner_email: Optional[str] = None,
-    bucket: Optional[str] = None,
-    file_format: Optional[str] = None,
-    estimated_row_count: Optional[int] = None,
-    column_count: Optional[int] = None,
+    owner_email: str | None = None,
+    bucket: str | None = None,
+    file_format: str | None = None,
+    estimated_row_count: int | None = None,
+    column_count: int | None = None,
 ) -> ScannerEvent:
     """Insert a scanner event; silently skips if event_id already exists."""
     values = {
@@ -34,14 +34,10 @@ def upsert_scanner_event(
         "estimated_row_count": estimated_row_count,
         "column_count": column_count,
     }
-    stmt = insert(ScannerEvent).values(**values).on_conflict_do_nothing(
-        index_elements=["event_id"]
-    )
+    stmt = insert(ScannerEvent).values(**values).on_conflict_do_nothing(index_elements=["event_id"])
     db.execute(stmt)
     db.commit()
-    return db.execute(
-        select(ScannerEvent).where(ScannerEvent.event_id == event_id)
-    ).scalar_one()
+    return db.execute(select(ScannerEvent).where(ScannerEvent.event_id == event_id)).scalar_one()
 
 
 def get_pending_events(db: Session, limit: int = 100) -> list[ScannerEvent]:

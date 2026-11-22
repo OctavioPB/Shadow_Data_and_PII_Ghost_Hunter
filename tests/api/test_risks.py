@@ -159,9 +159,7 @@ async def test_pii_report_requires_auth(client: AsyncClient):
 
 
 async def test_remediate_viewer_gets_403(client: AsyncClient, as_viewer):
-    resp = await client.post(
-        "/api/v1/tables/tbl-001/remediate", json={"action": "quarantine"}
-    )
+    resp = await client.post("/api/v1/tables/tbl-001/remediate", json={"action": "quarantine"})
     assert resp.status_code == 403
 
 
@@ -175,7 +173,5 @@ async def test_remediate_invalid_action_returns_422(client: AsyncClient, as_dpo)
 
 async def test_remediate_unknown_table_returns_404(client: AsyncClient, as_dpo):
     set_db(_empty_session())
-    resp = await client.post(
-        "/api/v1/tables/nonexistent/remediate", json={"action": "quarantine"}
-    )
+    resp = await client.post("/api/v1/tables/nonexistent/remediate", json={"action": "quarantine"})
     assert resp.status_code == 404

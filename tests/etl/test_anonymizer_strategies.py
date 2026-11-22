@@ -9,13 +9,13 @@ Verifies every PII strategy:
 
 from __future__ import annotations
 
-import hashlib
 import re
 
 import pytest
 
 from etl.anonymizers.strategies import (
     _REDACTED,
+    STRATEGY_MAP,
     anonymize_bank_account,
     anonymize_credit_card,
     anonymize_date_of_birth,
@@ -26,11 +26,10 @@ from etl.anonymizers.strategies import (
     anonymize_ssn,
     anonymize_value,
     get_strategy,
-    STRATEGY_MAP,
 )
 
-
 # ─── EMAIL ────────────────────────────────────────────────────────────────────
+
 
 def test_email_returns_sha256_hex():
     result = anonymize_email("alice@example.com")
@@ -57,12 +56,16 @@ def test_email_case_insensitive():
 
 # ─── CREDIT_CARD ──────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("card,expected_suffix", [
-    ("4111 1111 1111 1111", "1111"),
-    ("4532015112830366", "0366"),
-    ("5500-0055-5555-5559", "5559"),
-    ("378282246310005", "0005"),
-])
+
+@pytest.mark.parametrize(
+    "card,expected_suffix",
+    [
+        ("4111 1111 1111 1111", "1111"),
+        ("4532015112830366", "0366"),
+        ("5500-0055-5555-5559", "5559"),
+        ("378282246310005", "0005"),
+    ],
+)
 def test_credit_card_keeps_last_4(card, expected_suffix):
     result = anonymize_credit_card(card)
     assert result.endswith(expected_suffix)
@@ -84,11 +87,15 @@ def test_credit_card_none_returns_redacted():
 
 # ─── SSN ──────────────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("value", [
-    "123-45-6789",
-    "123.456.789-09",    # CPF
-    "BADD110313HCMLNS09",  # CURP
-])
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "123-45-6789",
+        "123.456.789-09",  # CPF
+        "BADD110313HCMLNS09",  # CURP
+    ],
+)
 def test_ssn_always_redacted(value):
     assert anonymize_ssn(value) == _REDACTED
 
@@ -102,6 +109,7 @@ def test_ssn_none_returns_redacted():
 
 
 # ─── FULL_NAME ────────────────────────────────────────────────────────────────
+
 
 def test_full_name_preserves_word_count():
     original = "Maria García López"
@@ -127,6 +135,7 @@ def test_full_name_deterministic():
 
 
 # ─── PHONE ───────────────────────────────────────────────────────────────────
+
 
 def test_phone_keeps_country_code():
     result = anonymize_phone("+1-800-555-0199")
@@ -157,17 +166,22 @@ def test_phone_none_returns_redacted():
 
 # ─── ADDRESS ─────────────────────────────────────────────────────────────────
 
+
 def test_address_fully_redacted():
     assert anonymize_bank_account("123 Main St, Springfield") == _REDACTED
 
 
 # ─── DATE_OF_BIRTH ────────────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("dob,expected_year", [
-    ("1990-07-14", "1990"),
-    ("14/07/1990", "1990"),
-    ("07-14-1990", "1990"),
-])
+
+@pytest.mark.parametrize(
+    "dob,expected_year",
+    [
+        ("1990-07-14", "1990"),
+        ("14/07/1990", "1990"),
+        ("07-14-1990", "1990"),
+    ],
+)
 def test_dob_keeps_year(dob, expected_year):
     result = anonymize_date_of_birth(dob)
     assert expected_year in result
@@ -185,6 +199,7 @@ def test_dob_none_returns_redacted():
 
 # ─── BANK_ACCOUNT ────────────────────────────────────────────────────────────
 
+
 def test_bank_account_fully_redacted():
     assert anonymize_bank_account("GB29NWBK60161331926819") == _REDACTED
     assert anonymize_bank_account("021000021/1234567890") == _REDACTED
@@ -192,12 +207,14 @@ def test_bank_account_fully_redacted():
 
 # ─── PASSPORT ────────────────────────────────────────────────────────────────
 
+
 def test_passport_fully_redacted():
     assert anonymize_passport("A12345678") == _REDACTED
     assert anonymize_passport("AB1234567") == _REDACTED
 
 
 # ─── Dispatch table ───────────────────────────────────────────────────────────
+
 
 def test_strategy_map_covers_all_pii_categories():
     from ml.data.pii_dataset import PII_LABELS
@@ -224,18 +241,20 @@ def test_anonymize_value_dispatch():
 
 # ─── Cross-strategy: none return original sensitive values ─────────────────────
 
-@pytest.mark.parametrize("value,category", [
-    ("alice@example.com", "EMAIL"),
-    ("4111 1111 1111 1111", "CREDIT_CARD"),
-    ("123-45-6789", "SSN"),
-    ("John Smith", "FULL_NAME"),
-    ("+1-800-555-0199", "PHONE"),
-    ("1990-07-14", "DATE_OF_BIRTH"),
-    ("GB29NWBK60161331926819", "BANK_ACCOUNT"),
-    ("A12345678", "PASSPORT"),
-])
+
+@pytest.mark.parametrize(
+    "value,category",
+    [
+        ("alice@example.com", "EMAIL"),
+        ("4111 1111 1111 1111", "CREDIT_CARD"),
+        ("123-45-6789", "SSN"),
+        ("John Smith", "FULL_NAME"),
+        ("+1-800-555-0199", "PHONE"),
+        ("1990-07-14", "DATE_OF_BIRTH"),
+        ("GB29NWBK60161331926819", "BANK_ACCOUNT"),
+        ("A12345678", "PASSPORT"),
+    ],
+)
 def test_strategy_never_returns_original(value, category):
     result = anonymize_value(value, category)
-    assert result != value, (
-        f"{category} strategy returned unchanged value — PII not anonymized"
-    )
+    assert result != value, f"{category} strategy returned unchanged value — PII not anonymized"

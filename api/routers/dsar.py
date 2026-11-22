@@ -25,9 +25,9 @@ from api.db import get_db
 router = APIRouter(prefix="/api/v1/dsar", tags=["dsar"])
 
 _CATEGORY_MAP: dict[str, str] = {
-    "email":       "EMAIL",
+    "email": "EMAIL",
     "national_id": "SSN",
-    "phone":       "PHONE",
+    "phone": "PHONE",
 }
 
 _HASH_KEY = os.environ.get("DSAR_HASH_KEY", SECRET_KEY).encode()
@@ -60,7 +60,8 @@ async def dsar_search(
     tables_searched = int(searched.scalar() or 0)
 
     rows = await db.execute(
-        text("""
+        text(
+            """
             SELECT
                 se.source_name,
                 pf.table_id,
@@ -81,7 +82,8 @@ async def dsar_search(
             GROUP BY se.source_name, pf.table_id, se.data_source_type,
                      se.owner_email, se.estimated_row_count
             ORDER BY max(pf.confidence) DESC
-        """),
+        """
+        ),
         {"cat": pii_category},
     )
 
@@ -100,12 +102,14 @@ async def dsar_search(
     ]
 
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO dsar_searches
                 (search_id, initiated_by, identifier_type, search_hash,
                  tables_searched_count, tables_matched_count)
             VALUES (:sid, :actor, :itype, :hash, :searched, :matched)
-        """),
+        """
+        ),
         {
             "sid": search_id,
             "actor": user["email"],
@@ -116,18 +120,22 @@ async def dsar_search(
         },
     )
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO audit_log (event_type, table_id, actor, details_json)
             VALUES ('dsar_search_initiated', :sid, :actor, CAST(:d AS jsonb))
-        """),
+        """
+        ),
         {
             "sid": search_id,
             "actor": user["email"],
-            "d": json.dumps({
-                "search_id": search_id,
-                "identifier_type": identifier_type,
-                "tables_matched": len(matches),
-            }),
+            "d": json.dumps(
+                {
+                    "search_id": search_id,
+                    "identifier_type": identifier_type,
+                    "tables_matched": len(matches),
+                }
+            ),
         },
     )
     await db.commit()
@@ -150,13 +158,17 @@ async def list_searches(
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(require_role("dpo", "admin")),
 ) -> dict:
-    rows = await db.execute(text("""
+    rows = await db.execute(
+        text(
+            """
         SELECT search_id, initiated_by, identifier_type,
                tables_searched_count, tables_matched_count, created_at
         FROM dsar_searches
         ORDER BY created_at DESC
         LIMIT 50
-    """))
+    """
+        )
+    )
     return {
         "searches": [
             {

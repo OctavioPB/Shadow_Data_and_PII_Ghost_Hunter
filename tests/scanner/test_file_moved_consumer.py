@@ -6,7 +6,6 @@ import pytest
 from scanner.consumers.file_moved_consumer import _parse_s3_eventbridge
 from scanner.schemas.events import DataSourceType, FileFormat, FileMovedEvent
 
-
 # ─── _parse_s3_eventbridge ───────────────────────────────────────────────────
 
 
@@ -156,9 +155,7 @@ def test_handle_unknown_format_maps_to_unknown_source(file_consumer):
 
 def test_handle_generates_fallback_event_id_when_empty(file_consumer):
     c, _, _ = file_consumer
-    with patch(
-        "scanner.consumers.file_moved_consumer.upsert_scanner_event"
-    ) as mock_upsert:
+    with patch("scanner.consumers.file_moved_consumer.upsert_scanner_event") as mock_upsert:
         event = FileMovedEvent(
             event_id="",
             bucket="my-bucket",
@@ -172,9 +169,7 @@ def test_handle_generates_fallback_event_id_when_empty(file_consumer):
 
 def test_handle_source_name_is_s3_uri(file_consumer):
     c, _, _ = file_consumer
-    with patch(
-        "scanner.consumers.file_moved_consumer.upsert_scanner_event"
-    ) as mock_upsert:
+    with patch("scanner.consumers.file_moved_consumer.upsert_scanner_event") as mock_upsert:
         event = FileMovedEvent(
             event_id="e5",
             bucket="analytics",

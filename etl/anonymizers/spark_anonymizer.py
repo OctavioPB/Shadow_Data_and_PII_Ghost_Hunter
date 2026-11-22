@@ -54,6 +54,7 @@ def _norm_path(path: str) -> str:
 
 # ─── Idempotency check ────────────────────────────────────────────────────────
 
+
 def _already_anonymized(database_url: str, table_id: str) -> bool:
     """Return True if an anonymization_completed record exists for this table."""
     import sqlalchemy as sa
@@ -75,6 +76,7 @@ def _already_anonymized(database_url: str, table_id: str) -> bool:
 
 
 # ─── Core anonymization logic ─────────────────────────────────────────────────
+
 
 def anonymize_dataframe(
     df,  # pyspark.sql.DataFrame
@@ -228,6 +230,7 @@ def _write_audit_record(database_url: str, table_id: str, summary: dict) -> None
 
 
 # ─── CLI entry point ──────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="PySpark PII anonymizer")

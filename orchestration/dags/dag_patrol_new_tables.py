@@ -75,7 +75,12 @@ def patrol_new_tables() -> None:
             }
             for row in rows
         ]
-        log.info("Patrol window %s→%s: %d pending events", data_interval_start, data_interval_end, len(events))
+        log.info(
+            "Patrol window %s→%s: %d pending events",
+            data_interval_start,
+            data_interval_end,
+            len(events),
+        )
         return events
 
     @task

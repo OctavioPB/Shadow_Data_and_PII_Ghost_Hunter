@@ -6,18 +6,15 @@ S3 and DB calls are mocked — no AWS credentials or Postgres needed.
 
 from __future__ import annotations
 
-import json
 import tarfile
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, call, patch
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from ml.training.publish import _create_tarball, register_model, upload_to_s3
 
-
 # ─── _create_tarball ──────────────────────────────────────────────────────────
+
 
 def test_create_tarball_produces_gz_file():
     with tempfile.TemporaryDirectory() as tmp:
@@ -53,6 +50,7 @@ def test_create_tarball_uses_model_arcname():
 
 
 # ─── upload_to_s3 ─────────────────────────────────────────────────────────────
+
 
 def test_upload_to_s3_targets_correct_key():
     with tempfile.TemporaryDirectory() as tmp:
@@ -107,6 +105,7 @@ def test_upload_does_not_write_to_source_bucket():
 
 # ─── register_model ───────────────────────────────────────────────────────────
 
+
 def test_register_model_executes_insert():
     mock_conn = MagicMock()
     mock_conn.__enter__ = lambda s: mock_conn
@@ -121,7 +120,12 @@ def test_register_model_executes_insert():
             database_url="postgresql://localhost/test",
             version="v1.0.0",
             s3_uri="s3://pii-hunter-models/v1.0.0/model.tar.gz",
-            metrics={"macro_f1": 0.93, "weighted_f1": 0.94, "accuracy": 0.95, "fixture_accuracy": 0.97},
+            metrics={
+                "macro_f1": 0.93,
+                "weighted_f1": 0.94,
+                "accuracy": 0.95,
+                "fixture_accuracy": 0.97,
+            },
             status="candidate",
         )
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import torch
@@ -21,8 +21,8 @@ from ml.data.pii_dataset import (
     _format_input,
 )
 
-
 # ─── Label map consistency ────────────────────────────────────────────────────
+
 
 def test_label_maps_are_inverses():
     for lbl, idx in LABEL2ID.items():
@@ -40,12 +40,14 @@ def test_label_list_is_sorted():
 
 # ─── _format_input ────────────────────────────────────────────────────────────
 
+
 def test_format_input():
     result = _format_input("email", "alice@example.com")
     assert result == "email: alice@example.com"
 
 
 # ─── PIIDataset ───────────────────────────────────────────────────────────────
+
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
     with path.open("w") as f:

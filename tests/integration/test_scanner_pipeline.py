@@ -12,13 +12,13 @@ selected (run with: pytest -m integration tests/integration/)
 import json
 import threading
 import time
-from typing import Generator
+from collections.abc import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
 from confluent_kafka import Consumer, Producer
 from confluent_kafka.admin import AdminClient, NewTopic
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from testcontainers.kafka import KafkaContainer
 from testcontainers.postgres import PostgresContainer
@@ -70,7 +70,7 @@ def kafka_topics(kafka_bootstrap: str) -> None:
         NewTopic("table.created.dlq", num_partitions=1, replication_factor=1),
     ]
     futures = admin.create_topics(topics)
-    for topic, f in futures.items():
+    for _topic, f in futures.items():
         try:
             f.result()
         except Exception:

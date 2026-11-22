@@ -16,9 +16,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Generator
-from unittest.mock import MagicMock, patch
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine, select, text
@@ -81,8 +79,8 @@ def pending_event(pg_engine) -> ScannerEvent:
         status="pending",
         raw_event={"table_name": "customer_pii_backup", "database_name": "prod"},
         column_count=6,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
     )
     with Session(pg_engine) as s:
         s.add(event)
@@ -92,7 +90,13 @@ def pending_event(pg_engine) -> ScannerEvent:
         event_event_id = event.event_id
 
     # Return a plain dict so it can cross session boundaries
-    return {"id": str(event_id), "event_id": event_event_id, "source_name": "prod.customer_pii_backup", "data_source_type": "glue", "column_count": 6}
+    return {
+        "id": str(event_id),
+        "event_id": event_event_id,
+        "source_name": "prod.customer_pii_backup",
+        "data_source_type": "glue",
+        "column_count": 6,
+    }
 
 
 # ─── Test: patrol enqueue task ────────────────────────────────────────────────
@@ -213,9 +217,7 @@ def test_sampling_pipeline_writes_audit_log(pg_engine, pending_event):
 
     with Session(pg_engine) as s:
         entries = list(
-            s.execute(
-                select(AuditLog).where(AuditLog.table_id == pending_event["id"])
-            ).scalars()
+            s.execute(select(AuditLog).where(AuditLog.table_id == pending_event["id"])).scalars()
         )
     assert len(entries) == 1
     assert entries[0].event_type == "sampling_completed"
@@ -250,8 +252,7 @@ def test_sampling_updates_scanner_event_to_sampled(pg_engine, pending_event):
     with pg_engine.connect() as conn:
         conn.execute(
             text(
-                "UPDATE scanner_events SET status = 'sampled', updated_at = now() "
-                "WHERE id = :id"
+                "UPDATE scanner_events SET status = 'sampled', updated_at = now() " "WHERE id = :id"
             ),
             {"id": pending_event["id"]},
         )

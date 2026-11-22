@@ -105,7 +105,7 @@ class PIIClassifierOperator(BaseOperator):
         """Download parquet from S3 and return {column_name: [values]}."""
         uri = self.sample_s3_path
         if uri.startswith("s3://"):
-            without = uri[len("s3://"):]
+            without = uri[len("s3://") :]
             bucket, _, key = without.partition("/")
             s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
             obj = s3.get_object(Bucket=bucket, Key=key)
@@ -139,9 +139,7 @@ class PIIClassifierOperator(BaseOperator):
         with httpx.Client(timeout=30.0) as client:
             resp = client.post(url, json=payload)
         if resp.status_code != 200:
-            raise RuntimeError(
-                f"Inference service returned {resp.status_code}: {resp.text[:200]}"
-            )
+            raise RuntimeError(f"Inference service returned {resp.status_code}: {resp.text[:200]}")
         return resp.json()["results"]
 
     def _persist_findings(self, findings: list[dict]) -> dict:
@@ -199,9 +197,7 @@ class PIIClassifierOperator(BaseOperator):
             "scanner_event_id": self.scanner_event_id,
             "total_count": len(findings),
             "flagged_count": flagged_count,
-            "flagged_categories": sorted(
-                {f["pii_category"] for f in findings if f["flagged"]}
-            ),
+            "flagged_categories": sorted({f["pii_category"] for f in findings if f["flagged"]}),
             # Needed by the remediation DAG to know which columns to anonymize.
             "flagged_columns": [
                 {

@@ -27,7 +27,6 @@ Performance targets (from PLAN.md S7-02):
 
 from __future__ import annotations
 
-import json
 import os
 import random
 import string
@@ -201,8 +200,7 @@ class InferenceUser(HttpUser):
                         ["email_address", "ssn", "phone_number", "full_name", "created_at"]
                     ),
                     "values": [
-                        "".join(random.choices(string.ascii_letters, k=10))
-                        for _ in range(10)
+                        "".join(random.choices(string.ascii_letters, k=10)) for _ in range(10)
                     ],
                 }
                 for i in range(random.randint(1, 5))

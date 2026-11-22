@@ -19,17 +19,21 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("ALTER TABLE pii_findings DROP CONSTRAINT IF EXISTS chk_pii_findings_status")
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE pii_findings
         ADD CONSTRAINT chk_pii_findings_status
         CHECK (status IN ('classified', 'flagged', 'clean', 'remediated', 'quarantined'))
-    """)
+    """
+    )
 
 
 def downgrade() -> None:
     op.execute("ALTER TABLE pii_findings DROP CONSTRAINT IF EXISTS chk_pii_findings_status")
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE pii_findings
         ADD CONSTRAINT chk_pii_findings_status
         CHECK (status IN ('classified', 'flagged', 'clean', 'remediated'))
-    """)
+    """
+    )

@@ -21,7 +21,7 @@ import os
 import time
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from ml.inference.metrics import (
@@ -83,6 +83,7 @@ async def _warmup_model() -> None:
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:

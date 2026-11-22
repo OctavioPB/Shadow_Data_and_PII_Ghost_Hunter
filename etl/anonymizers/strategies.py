@@ -16,14 +16,13 @@ from __future__ import annotations
 
 import hashlib
 import re
-import string
 
 # ─── Idempotency sentinels ────────────────────────────────────────────────────
 
 _REDACTED = "[REDACTED]"
-_HASH_RE = re.compile(r"^[0-9a-f]{64}$")            # SHA-256 hex
+_HASH_RE = re.compile(r"^[0-9a-f]{64}$")  # SHA-256 hex
 _MASKED_CARD_RE = re.compile(r"^\*{4}(-\*{4}){2}-\d{4}$")  # ****-****-****-1234
-_MASKED_PHONE_RE = re.compile(r"^(\+\d{1,3}-)?\*+$")   # +1-********** or *******
+_MASKED_PHONE_RE = re.compile(r"^(\+\d{1,3}-)?\*+$")  # +1-********** or *******
 
 
 def _is_already_redacted(value: str) -> bool:
@@ -43,6 +42,7 @@ def _is_already_masked_phone(value: str) -> bool:
 
 
 # ─── Strategy implementations ─────────────────────────────────────────────────
+
 
 def anonymize_email(value: str | None) -> str:
     """SHA-256 hash of the full email address."""

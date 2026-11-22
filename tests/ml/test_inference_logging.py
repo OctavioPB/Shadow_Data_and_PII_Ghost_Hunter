@@ -7,23 +7,19 @@ regardless of what values are passed in the request.
 
 from __future__ import annotations
 
-import io
-import json
-import logging
 from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
 _SENTINEL_VALUES = [
-    "alice@example.com",         # email address
-    "123-45-6789",               # SSN
-    "4111 1111 1111 1111",       # VISA card
+    "alice@example.com",  # email address
+    "123-45-6789",  # SSN
+    "4111 1111 1111 1111",  # VISA card
     "SecretPhoneNumber5559999",  # phone
-    "João da Silva",             # full name (Portuguese)
+    "João da Silva",  # full name (Portuguese)
 ]
 
 
@@ -50,6 +46,7 @@ def _capture_logs(app, payload: dict) -> str:
 
 # ─── Tests ───────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def app_with_mock_model():
     with (
@@ -59,6 +56,7 @@ def app_with_mock_model():
         patch("ml.inference.app.classify_column", return_value=("EMAIL", 0.97)),
     ):
         from ml.inference.app import app
+
         yield app
 
 
@@ -78,18 +76,16 @@ def test_raw_values_not_in_log_output(app_with_mock_model):
     log_output = _capture_logs(app_with_mock_model, payload)
 
     for sentinel in _SENTINEL_VALUES:
-        assert sentinel not in log_output, (
-            f"Sensitive value '{sentinel}' found in log output — S4-04 violation"
-        )
+        assert (
+            sentinel not in log_output
+        ), f"Sensitive value '{sentinel}' found in log output — S4-04 violation"
 
 
 def test_table_id_is_logged(app_with_mock_model):
     """table_id must appear in logs for traceability."""
     payload = {
         "table_id": "tbl-trace-test-xyz",
-        "columns": [
-            {"column_id": "c1", "column_name": "phone", "values": ["+1-555-000-0000"]}
-        ],
+        "columns": [{"column_id": "c1", "column_name": "phone", "values": ["+1-555-000-0000"]}],
     }
     log_output = _capture_logs(app_with_mock_model, payload)
     assert "tbl-trace-test-xyz" in log_output
@@ -99,9 +95,7 @@ def test_pii_category_is_logged(app_with_mock_model):
     """Classified category must appear in logs (column_classified event)."""
     payload = {
         "table_id": "tbl-category-test",
-        "columns": [
-            {"column_id": "c1", "column_name": "email", "values": ["dummy@test.com"]}
-        ],
+        "columns": [{"column_id": "c1", "column_name": "email", "values": ["dummy@test.com"]}],
     }
     log_output = _capture_logs(app_with_mock_model, payload)
     assert "EMAIL" in log_output
@@ -111,9 +105,7 @@ def test_confidence_is_logged(app_with_mock_model):
     """Confidence score must appear in logs."""
     payload = {
         "table_id": "tbl-conf-test",
-        "columns": [
-            {"column_id": "c1", "column_name": "ssn", "values": ["000-00-0000"]}
-        ],
+        "columns": [{"column_id": "c1", "column_name": "ssn", "values": ["000-00-0000"]}],
     }
     log_output = _capture_logs(app_with_mock_model, payload)
     # The mock returns 0.97 as confidence
@@ -138,6 +130,4 @@ def test_multiple_columns_no_value_leakage(app_with_mock_model):
 
     all_values = [v for vals in sensitive_values_per_col.values() for v in vals]
     for val in all_values:
-        assert val not in log_output, (
-            f"Value '{val}' leaked into logs — S4-04 violation"
-        )
+        assert val not in log_output, f"Value '{val}' leaked into logs — S4-04 violation"
