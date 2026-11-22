@@ -91,33 +91,37 @@ jobs:
   # ─── Airflow DAG tests ──────────────────────────────────────────────────────
   # Airflow 2.8 requires SQLAlchemy<2 (the API uses 2.x), so the DAG/operator
   # tests run inside the same image docker-compose uses for the scheduler.
+  #
+  # Not a `container:` job: the image only lets its own `airflow` user run pip
+  # (Airflow lives in that user's site-packages, invisible to root), while
+  # container jobs need root to write the checkout. Instead the checkout is
+  # mounted read-only into a plain `docker run` as the default user.
   airflow-test:
     name: Airflow DAG tests
     runs-on: ubuntu-latest
-    container:
-      image: apache/airflow:2.8.1-python3.11
-      options: --user root
-    env:
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      PYTHONPATH: orchestration/plugins
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install test tools
-        run: pip install pytest==8.2.0 pytest-asyncio==0.23.6 pytest-mock==3.14.0
-
-      - name: DAGs import without errors
+      - name: DAG import check + orchestration tests
         run: |
-          python - <<'PY'
+          docker run --rm \
+            -v "$PWD:/opt/app:ro" -w /opt/app \
+            -e AIRFLOW__CORE__LOAD_EXAMPLES=false \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e PYTHONPATH=/opt/app/orchestration/plugins \
+            --entrypoint bash apache/airflow:2.8.1-python3.11 -c '
+          set -euo pipefail
+          pip install --quiet --no-warn-script-location \
+            pytest==8.2.0 pytest-asyncio==0.23.6 pytest-mock==3.14.0
+          python - <<"PY"
           from airflow.models import DagBag
           bag = DagBag(dag_folder="orchestration/dags", include_examples=False)
           assert not bag.import_errors, bag.import_errors
-          print(sorted(bag.dags))
+          print("DAGs:", sorted(bag.dags))
           PY
-
-      - name: Run orchestration tests
-        # --noconftest: the root conftest imports the FastAPI app (SQLAlchemy 2)
-        run: python -m pytest -o addopts="" --noconftest -q tests/orchestration
+          # --noconftest: the root conftest imports the FastAPI app (SQLAlchemy 2)
+          python -m pytest -p no:cacheprovider -o addopts="" --noconftest -q tests/orchestration
+          '
 
   # ─── TypeScript lint ────────────────────────────────────────────────────────
   ts-lint:
