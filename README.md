@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/OctavioPB/Shadow_Data_and_PII_Ghost_Hunter/actions/workflows/ci.yml/badge.svg)](https://github.com/OctavioPB/Shadow_Data_and_PII_Ghost_Hunter/actions/workflows/ci.yml)
 [![Security](https://img.shields.io/badge/security-OWASP%20reviewed-blue)](docs/security-review.md)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An automated data-governance platform that detects and remediates **ghost data**: forgotten copies of sensitive (PII) datasets scattered across data lakes, S3 buckets and temporary warehouse tables. It is built for continuous GDPR / LGPD compliance.
 
@@ -216,3 +217,9 @@ The Airflow providers are not pip-installed; they come with the `apache/airflow`
   - [Quarantine Bucket Full](docs/runbooks/quarantine-bucket-full.md)
   - [Kafka Consumer Lag Spike](docs/runbooks/kafka-consumer-lag-spike.md)
 - Planning: [Roadmap](planning/ROADMAP.md) · [Decisions](planning/DECISIONS.md) · [Brand & Design System](planning/BRAND.md)
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE).
