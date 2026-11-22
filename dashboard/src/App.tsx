@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from './store/authStore';
 import { useLogin } from './hooks/useAuth';
 import { useDemoSeed } from './hooks/useDemo';
@@ -1010,9 +1010,19 @@ const STATUSES = [
   { value: 'remediated', label: 'Remediated' },
 ];
 
-function DashboardPage({ onTableClick }: { onTableClick: (id: string) => void }) {
-  const [filters, setFilters] = useState<RiskFilters>({ page: 1, size: 20 });
-  const [source, setSource] = useState('');
+function DashboardPage({
+  onTableClick,
+  initialSource = '',
+}: {
+  onTableClick: (id: string) => void;
+  initialSource?: string;
+}) {
+  const [filters, setFilters] = useState<RiskFilters>({
+    page: 1,
+    size: 20,
+    source: initialSource || undefined,
+  });
+  const [source, setSource] = useState(initialSource);
   const [category, setCategory] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
@@ -3142,7 +3152,10 @@ function RopaTab({ token, API }: { token: string | null; API: string }) {
     await load();
   };
 
-  useState(() => { load(); });
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load on mount / token change
+  }, [token, API]);
 
   const card: React.CSSProperties = {
     background: '#fff',
@@ -3305,7 +3318,10 @@ function DsarTab({ token, API }: { token: string | null; API: string }) {
     }
   };
 
-  useState(() => { loadHistory(); });
+  useEffect(() => {
+    void loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load on mount / token change
+  }, [token, API]);
 
   const runSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3485,19 +3501,29 @@ function IntelligenceTab({ token, API }: { token: string | null; API: string }) 
   const [exposure, setExposure] = useState<{ total_exposed_records: number; estimated_fine_low_eur: number; estimated_fine_high_eur: number; methodology: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useState(() => {
+  useEffect(() => {
+    let cancelled = false;
     const h = { Authorization: `Bearer ${token}` };
+    // A rejected fetch (network error) used to leave the spinner on forever.
+    const getJson = (path: string) =>
+      fetch(`${API}${path}`, { headers: h })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
     Promise.all([
-      fetch(`${API}/api/v1/compliance/trends`, { headers: h }).then((r) => r.ok ? r.json() : null),
-      fetch(`${API}/api/v1/compliance/forecast`, { headers: h }).then((r) => r.ok ? r.json() : null),
-      fetch(`${API}/api/v1/compliance/risk-exposure`, { headers: h }).then((r) => r.ok ? r.json() : null),
+      getJson('/api/v1/compliance/trends'),
+      getJson('/api/v1/compliance/forecast'),
+      getJson('/api/v1/compliance/risk-exposure'),
     ]).then(([t, f, e]) => {
+      if (cancelled) return;
       setTrends(t);
       setForecast(f);
       setExposure(e);
       setLoading(false);
     });
-  });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, API]);
 
   const card: React.CSSProperties = {
     background: '#fff', borderRadius: 12,
@@ -3627,7 +3653,12 @@ export default function App() {
         <Nav page={page} setPage={(p) => { setPage(p); if (p !== 'pii-report') setSelectedTableId(null); }} />
         <main style={{ flex: 1 }}>
           {page === 'dashboard' && (
-            <DashboardPage onTableClick={handleTableClick} />
+            // key remounts the page so a new source click re-seeds its filters
+            <DashboardPage
+              key={sourceFilter}
+              onTableClick={handleTableClick}
+              initialSource={sourceFilter}
+            />
           )}
           {page === 'pii-report' && selectedTableId && (
             <PIIReportPage
