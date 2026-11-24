@@ -121,9 +121,28 @@ def test_full_name_not_equal_to_original():
     assert anonymize_full_name("John Smith") != "John Smith"
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Deliberate trade-off. A pseudonym is indistinguishable from a real name "
+        "(e.g. 'Ana', 'Pedro'), so detecting 'already pseudonymized' by shape would let "
+        "real names through un-anonymized. Re-runs are prevented at job level instead "
+        "(anonymization_completed in audit_log); a second pass only yields a different "
+        "pseudonym, never the original name. strict=True: if this ever passes, review "
+        "whether real names can now leak."
+    ),
+)
 def test_full_name_idempotent():
     first = anonymize_full_name("João da Silva")
     assert anonymize_full_name(first) == first
+
+
+@pytest.mark.parametrize("name", ["Ana", "Pedro Lima", "Bob", "Maria da Silva", "ANA LOPEZ"])
+def test_full_name_never_returns_a_real_name_unchanged(name):
+    """The property the xfail above protects: no input passes through as-is."""
+    result = anonymize_full_name(name)
+    assert result != name
+    assert [len(w) for w in result.split()] == [len(w) for w in name.split()]
 
 
 def test_full_name_none_returns_redacted():
