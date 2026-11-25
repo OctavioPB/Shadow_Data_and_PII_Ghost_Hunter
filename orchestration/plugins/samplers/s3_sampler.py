@@ -3,18 +3,17 @@ import logging
 
 import boto3
 import pandas as pd
-
 from samplers.base_sampler import BaseSampler, SampleResult
 
 logger = logging.getLogger(__name__)
 
 _FORMAT_READERS = {
-    "parquet":    pd.read_parquet,
+    "parquet": pd.read_parquet,
     "s3_parquet": pd.read_parquet,
-    "csv":        lambda b: pd.read_csv(io.BytesIO(b)),
-    "s3_csv":     lambda b: pd.read_csv(io.BytesIO(b)),
-    "json":       lambda b: pd.read_json(io.BytesIO(b), lines=True),
-    "s3_json":    lambda b: pd.read_json(io.BytesIO(b), lines=True),
+    "csv": lambda b: pd.read_csv(io.BytesIO(b)),
+    "s3_csv": lambda b: pd.read_csv(io.BytesIO(b)),
+    "json": lambda b: pd.read_json(io.BytesIO(b), lines=True),
+    "s3_json": lambda b: pd.read_json(io.BytesIO(b), lines=True),
 }
 
 

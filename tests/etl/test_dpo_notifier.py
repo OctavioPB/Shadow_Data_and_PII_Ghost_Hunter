@@ -8,7 +8,7 @@ Verifies: template rendering, retry logic, DB logging, privacy (no raw values).
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -20,8 +20,8 @@ from etl.notifiers.dpo_notifier import (
     send_dpo_notifications,
 )
 
-
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def ctx():
@@ -41,6 +41,7 @@ def ctx():
 
 
 # ─── Template rendering ───────────────────────────────────────────────────────
+
 
 def test_email_template_contains_table_id(ctx):
     html = _render_html_email(ctx)
@@ -93,6 +94,7 @@ def test_slack_message_has_dashboard_button(ctx):
 
 # ─── _with_retry ──────────────────────────────────────────────────────────────
 
+
 def test_with_retry_succeeds_first_attempt():
     fn = MagicMock()
     success, error = _with_retry(fn, "arg1", max_retries=3)
@@ -121,7 +123,9 @@ def test_with_retry_returns_failure_after_max_attempts():
 def test_with_retry_exponential_backoff():
     fn = MagicMock(side_effect=[Exception("fail"), Exception("fail"), None])
     sleep_calls = []
-    with patch("etl.notifiers.dpo_notifier.time.sleep", side_effect=lambda d: sleep_calls.append(d)):
+    with patch(
+        "etl.notifiers.dpo_notifier.time.sleep", side_effect=lambda d: sleep_calls.append(d)
+    ):
         _with_retry(fn, max_retries=3)
     # Second delay should be 2x the first
     assert len(sleep_calls) == 2
@@ -129,6 +133,7 @@ def test_with_retry_exponential_backoff():
 
 
 # ─── send_dpo_notifications ───────────────────────────────────────────────────
+
 
 def _make_db_mock():
     mock_conn = MagicMock()
@@ -198,9 +203,7 @@ def test_send_notifications_no_channels_skips_gracefully(ctx):
     """No email or Slack configured — must not raise."""
     mock_engine, _ = _make_db_mock()
     with patch("etl.notifiers.dpo_notifier.sa.create_engine", return_value=mock_engine):
-        result = send_dpo_notifications(
-            ctx=ctx, database_url="db_url"  # no dpo_email, no slack
-        )
+        result = send_dpo_notifications(ctx=ctx, database_url="db_url")  # no dpo_email, no slack
     assert result["email"] is None
     assert result["slack"] is None
 

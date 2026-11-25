@@ -6,19 +6,17 @@ S3 and DB calls are mocked.
 
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from etl.quarantine.quarantine_job import (
-    _already_quarantined,
     _move_s3_prefix,
     run_quarantine,
 )
 
-
 # ─── _move_s3_prefix ─────────────────────────────────────────────────────────
+
 
 def _make_mock_s3(objects: list[dict]) -> MagicMock:
     mock_s3 = MagicMock()
@@ -38,8 +36,11 @@ def test_move_s3_prefix_copies_and_deletes():
     mock_s3 = _make_mock_s3(objects)
 
     count, total = _move_s3_prefix(
-        mock_s3, "staging-bucket", "samples/tbl-001/",
-        "pii-quarantine", "pending/tbl-001/",
+        mock_s3,
+        "staging-bucket",
+        "samples/tbl-001/",
+        "pii-quarantine",
+        "pending/tbl-001/",
     )
 
     assert count == 2
@@ -79,6 +80,7 @@ def test_move_s3_prefix_returns_zero_for_empty_prefix():
 
 # ─── run_quarantine — idempotency ─────────────────────────────────────────────
 
+
 def test_run_quarantine_skips_if_already_quarantined():
     with patch("etl.quarantine.quarantine_job._already_quarantined", return_value=True):
         result = run_quarantine(
@@ -104,6 +106,7 @@ def test_run_quarantine_raises_on_non_s3_path():
 
 
 # ─── run_quarantine — happy path ──────────────────────────────────────────────
+
 
 def _setup_db_mock():
     mock_conn = MagicMock()
@@ -159,9 +162,7 @@ def test_run_quarantine_updates_pii_findings_status():
         )
 
     # At least one execute call must reference pii_findings and 'quarantined'
-    all_sqls = " ".join(
-        str(c.args[0]) for c in mock_conn.execute.call_args_list
-    )
+    all_sqls = " ".join(str(c.args[0]) for c in mock_conn.execute.call_args_list)
     assert "pii_findings" in all_sqls
     assert "quarantined" in all_sqls
 

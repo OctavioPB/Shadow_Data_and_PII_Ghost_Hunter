@@ -21,14 +21,12 @@ import threading
 import time
 from pathlib import Path
 
-from ml.data.pii_dataset import PII_LABELS
-
 log = logging.getLogger(__name__)
 
 CONFIDENCE_THRESHOLD: float = float(os.environ.get("MODEL_CONFIDENCE_THRESHOLD", "0.85"))
 
 _lock = threading.Lock()
-_pipeline = None          # HuggingFace text-classification pipeline
+_pipeline = None  # HuggingFace text-classification pipeline
 _load_duration_s: float | None = None
 
 
@@ -74,8 +72,8 @@ def _load_model() -> tuple:
         "text-classification",
         model=model,
         tokenizer=tokenizer,
-        device=-1,  # CPU; override with GPU index via env if needed
-        return_all_scores=True,
+        device=int(os.environ.get("MODEL_DEVICE", "-1")),  # -1 = CPU, N = GPU index
+        top_k=None,  # all label scores (replaces deprecated return_all_scores=True)
         truncation=True,
         max_length=128,
     )
@@ -88,7 +86,7 @@ def _download_from_s3(s3_uri: str) -> str:
     import boto3
 
     # Parse s3://bucket/key
-    without_scheme = s3_uri[len("s3://"):]
+    without_scheme = s3_uri[len("s3://") :]
     bucket, _, key = without_scheme.partition("/")
 
     region = os.environ.get("AWS_REGION", "us-east-1")
@@ -102,7 +100,9 @@ def _download_from_s3(s3_uri: str) -> str:
 
     extract_dir = os.path.join(tmp_dir, "extracted")
     with tarfile.open(tarball, "r:gz") as tar:
-        tar.extractall(extract_dir)  # noqa: S202 — controlled internal path
+        # filter="data" rejects absolute paths, "../" traversal, links outside
+        # the target and device files (CVE-2007-4559 class of tar-slip bugs).
+        tar.extractall(extract_dir, filter="data")
 
     # The tarball contains a single "model/" directory
     model_dir = os.path.join(extract_dir, "model")
@@ -130,7 +130,8 @@ def classify_column(
     sample_values = values[:max_samples] if values else [""]
 
     texts = [f"{column_name}: {v}" for v in sample_values]
-    raw_outputs = clf(texts)
+    # One batched forward pass instead of len(texts) sequential ones.
+    raw_outputs = clf(texts, batch_size=len(texts))
 
     # raw_outputs: list[list[{"label": str, "score": float}]]
     best_label = "NONE"

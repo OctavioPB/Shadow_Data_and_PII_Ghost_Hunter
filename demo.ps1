@@ -225,10 +225,11 @@ if ($createdNewVenv) {
 
     # Pinned to the same versions as requirements.txt for compatibility.
     $apiPackages = @(
-        'fastapi==0.111.0',
-        'uvicorn[standard]==0.29.0',
-        'pydantic==2.7.1',
-        'pydantic-settings==2.2.1',
+        'fastapi==0.165.0',
+        'starlette==1.10.0',
+        'uvicorn[standard]==0.54.0',
+        'pydantic==2.14.4',
+        'pydantic-settings==2.16.3',
         'sqlalchemy==2.0.30',
         'asyncpg==0.29.0',
         'alembic==1.13.1',
@@ -236,14 +237,13 @@ if ($createdNewVenv) {
         'redis==5.0.4',
         'confluent-kafka==2.4.0',
         'fastavro==1.9.4',
-        'python-jose[cryptography]==3.3.0',
-        'python-multipart==0.0.9',
-        'python-dotenv==1.0.1',
+        'PyJWT[crypto]==2.15.1',
+        'python-multipart==0.0.34',
+        'python-dotenv==1.2.4',
         'structlog==24.1.0',
         'prometheus_client==0.20.0',
         'httpx==0.27.0',
-        'jinja2==3.1.4',
-        'aiosmtplib==3.0.1',
+        'jinja2==3.1.6',
         'pandas==2.2.2'
     )
 

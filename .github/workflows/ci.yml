@@ -31,7 +31,9 @@ jobs:
           cache: pip
 
       - name: Install linting tools
-        run: pip install ruff black
+        # Same versions as requirements-dev.txt / .pre-commit-config.yaml, so CI
+        # and local runs apply identical rules.
+        run: pip install ruff==0.4.4 black==24.4.2
 
       - name: ruff check
         run: ruff check .
@@ -54,8 +56,24 @@ jobs:
       - name: Install pip-audit
         run: pip install pip-audit
 
-      - name: Audit production dependencies
+      # One step per component so a failure points at the stack that needs work.
+      - name: Audit core dependencies (API, scanner, ETL)
         run: pip-audit -r requirements.txt --ignore-vuln PYSEC-2022-42974
+
+      - name: Audit API image dependencies
+        if: always()
+        run: pip-audit -r api/requirements.txt
+
+      # No PyTorch --extra-index-url here: torch would resolve to the +cpu build,
+      # which is not on PyPI, and pip-audit silently skips it. The PyPI release
+      # with the same version carries the same advisories.
+      - name: Audit ML dependencies (inference + tests)
+        if: always()
+        run: pip-audit -r requirements-ml.txt
+
+      - name: Audit training dependencies
+        if: always()
+        run: pip-audit -r requirements-train.txt
 
   # ─── Python tests ───────────────────────────────────────────────────────────
   python-test:
@@ -75,13 +93,51 @@ jobs:
       - name: Run tests
         run: pytest --cov --cov-fail-under=80
         env:
-          DATABASE_URL: sqlite+aiosqlite:///:memory:
+          # Engine is created lazily and API tests mock the session. asyncpg is
+          # installed (aiosqlite is not), and the old unquoted value ending in
+          # ":" made this whole workflow file invalid YAML.
+          DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/ci"
           REDIS_URL: redis://localhost:6379/0
           KAFKA_BOOTSTRAP_SERVERS: localhost:9092
           KAFKA_SECURITY_PROTOCOL: PLAINTEXT
           JWT_SECRET_KEY: ci-secret
           JWT_ALGORITHM: HS256
           MODEL_CONFIDENCE_THRESHOLD: "0.85"
+
+  # ─── Airflow DAG tests ──────────────────────────────────────────────────────
+  # Airflow 2.8 requires SQLAlchemy<2 (the API uses 2.x), so the DAG/operator
+  # tests run inside the same image docker-compose uses for the scheduler.
+  #
+  # Not a `container:` job: the image only lets its own `airflow` user run pip
+  # (Airflow lives in that user's site-packages, invisible to root), while
+  # container jobs need root to write the checkout. Instead the checkout is
+  # mounted read-only into a plain `docker run` as the default user.
+  airflow-test:
+    name: Airflow DAG tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: DAG import check + orchestration tests
+        run: |
+          docker run --rm \
+            -v "$PWD:/opt/app:ro" -w /opt/app \
+            -e AIRFLOW__CORE__LOAD_EXAMPLES=false \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e PYTHONPATH=/opt/app/orchestration/plugins \
+            --entrypoint bash apache/airflow:2.8.1-python3.11 -c '
+          set -euo pipefail
+          pip install --quiet --no-warn-script-location \
+            pytest==8.2.0 pytest-asyncio==0.23.6 pytest-mock==3.14.0
+          python - <<"PY"
+          from airflow.models import DagBag
+          bag = DagBag(dag_folder="orchestration/dags", include_examples=False)
+          assert not bag.import_errors, bag.import_errors
+          print("DAGs:", sorted(bag.dags))
+          PY
+          # --noconftest: the root conftest imports the FastAPI app (SQLAlchemy 2)
+          python -m pytest -p no:cacheprovider -o addopts="" --noconftest -q tests/orchestration
+          '
 
   # ─── TypeScript lint ────────────────────────────────────────────────────────
   ts-lint:

@@ -14,8 +14,8 @@ Validates:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, call, patch
+from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -29,7 +29,7 @@ pytest.importorskip("airflow", reason="apache-airflow not installed")
 
 def _make_row(table_id: str, days_ago: int, warning_sent: bool = False, expired: bool = False):
     """Build a fake quarantine_manifest row tuple."""
-    quarantined_at = datetime.now(tz=timezone.utc) - timedelta(days=days_ago)
+    quarantined_at = datetime.now(tz=UTC) - timedelta(days=days_ago)
     return (
         table_id,
         f"s3://pii-quarantine/pending/{table_id}/",
@@ -38,11 +38,21 @@ def _make_row(table_id: str, days_ago: int, warning_sent: bool = False, expired:
     )
 
 
+def _s3_with_objects(*keys: str) -> MagicMock:
+    """S3 client mock whose list_objects_v2 paginator yields *keys*."""
+    s3 = MagicMock()
+    s3.get_paginator.return_value.paginate.return_value = [
+        {"Contents": [{"Key": k, "Size": 1} for k in keys]}
+    ]
+    return s3
+
+
 # ─── DAG structure ────────────────────────────────────────────────────────────
 
 
 def test_dag_loads_without_errors():
     from orchestration.dags.dag_quarantine_expiry import quarantine_expiry_dag
+
     dag = quarantine_expiry_dag
     assert dag is not None
 
@@ -78,7 +88,6 @@ def test_dag_schedule_is_daily():
 
 @patch("orchestration.dags.dag_quarantine_expiry.PostgresHook")
 def test_find_expiring_soon_returns_correct_entries(mock_hook_cls):
-    from orchestration.dags.dag_quarantine_expiry import quarantine_expiry_dag
 
     # 24-day-old entry (past the 23-day warning threshold)
     row = _make_row("tbl-001", days_ago=24)
@@ -87,9 +96,9 @@ def test_find_expiring_soon_returns_correct_entries(mock_hook_cls):
     mock_hook_cls.return_value = mock_hook
 
     # Directly invoke the task function
-    from orchestration.dags.dag_quarantine_expiry import quarantine_expiry_dag as _dag
     # Re-import the inner function via the DAG source
     import importlib
+
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
     # Simulate the task function directly
@@ -104,6 +113,7 @@ def test_find_expiring_soon_returns_correct_entries(mock_hook_cls):
 @patch("orchestration.dags.dag_quarantine_expiry.PostgresHook")
 def test_find_expiring_soon_returns_empty_when_no_entries(mock_hook_cls):
     import importlib
+
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
     mock_hook = MagicMock()
     mock_hook.get_records.return_value = []
@@ -121,6 +131,7 @@ def test_find_expiring_soon_returns_empty_when_no_entries(mock_hook_cls):
 @patch("orchestration.dags.dag_quarantine_expiry.PostgresHook")
 def test_find_expired_returns_entries_past_retention(mock_hook_cls):
     import importlib
+
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
     row = _make_row("tbl-002", days_ago=31)
@@ -142,9 +153,10 @@ def test_find_expired_returns_entries_past_retention(mock_hook_cls):
 @patch("boto3.client")
 def test_move_to_expired_prefix_calls_copy_and_delete(mock_boto_client):
     import importlib
+
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
-    s3_mock = MagicMock()
+    s3_mock = _s3_with_objects("pending/tbl-003/part-0.parquet")
     mock_boto_client.return_value = s3_mock
 
     expired = [
@@ -159,19 +171,25 @@ def test_move_to_expired_prefix_calls_copy_and_delete(mock_boto_client):
         result = mod.move_to_expired_prefix.function(expired)
 
     assert result == ["tbl-003"]
+    # Objects under the prefix are moved one by one (the prefix is not a key).
+    s3_mock.get_paginator.return_value.paginate.assert_called_once_with(
+        Bucket="pii-quarantine", Prefix="pending/tbl-003/"
+    )
     s3_mock.copy_object.assert_called_once_with(
         Bucket="pii-quarantine",
-        CopySource={"Bucket": "pii-quarantine", "Key": "pending/tbl-003/"},
-        Key="expired/tbl-003/",
+        CopySource={"Bucket": "pii-quarantine", "Key": "pending/tbl-003/part-0.parquet"},
+        Key="expired/tbl-003/part-0.parquet",
+        ServerSideEncryption="AES256",
     )
     s3_mock.delete_object.assert_called_once_with(
-        Bucket="pii-quarantine", Key="pending/tbl-003/"
+        Bucket="pii-quarantine", Key="pending/tbl-003/part-0.parquet"
     )
 
 
 @patch("boto3.client")
 def test_move_to_expired_prefix_skips_invalid_s3_path(mock_boto_client):
     import importlib
+
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
     s3_mock = MagicMock()
@@ -196,9 +214,13 @@ def test_move_to_expired_prefix_skips_invalid_s3_path(mock_boto_client):
 @patch("boto3.client")
 def test_move_to_expired_prefix_handles_s3_error_gracefully(mock_boto_client):
     import importlib
+
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
     s3_mock = MagicMock()
+    s3_mock.get_paginator.return_value.paginate.return_value = [
+        {"Contents": [{"Key": "pending/tbl-err/part-0.parquet", "Size": 1}]}
+    ]
     s3_mock.copy_object.side_effect = Exception("NoSuchKey")
     mock_boto_client.return_value = s3_mock
 
@@ -223,6 +245,7 @@ def test_move_to_expired_prefix_handles_s3_error_gracefully(mock_boto_client):
 @patch("orchestration.dags.dag_quarantine_expiry.PostgresHook")
 def test_mark_expired_in_db_updates_manifest_and_writes_audit(mock_hook_cls):
     import importlib
+
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
     mock_hook = MagicMock()
@@ -241,6 +264,7 @@ def test_mark_expired_in_db_updates_manifest_and_writes_audit(mock_hook_cls):
 @patch("orchestration.dags.dag_quarantine_expiry.PostgresHook")
 def test_mark_expired_in_db_is_noop_for_empty_list(mock_hook_cls):
     import importlib
+
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
     mock_hook = MagicMock()
@@ -258,6 +282,7 @@ def test_mark_expired_in_db_is_noop_for_empty_list(mock_hook_cls):
 @patch("boto3.client")
 def test_move_to_expired_does_not_log_object_content(mock_boto_client, caplog):
     import importlib
+
     mod = importlib.import_module("orchestration.dags.dag_quarantine_expiry")
 
     s3_mock = MagicMock()

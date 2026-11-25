@@ -1,7 +1,7 @@
-version: "3.9"
-
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.8.1
+  # -python3.11: the default 2.8.1 image runs Python 3.8, which cannot import
+  # the samplers plugin (`match` statement) or the DAGs' str.removeprefix calls.
+  image: apache/airflow:2.8.1-python3.11
   environment:
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -16,10 +16,17 @@ x-airflow-common: &airflow-common
     S3_QUARANTINE_BUCKET: ${S3_QUARANTINE_BUCKET:-pii-quarantine}
     DPO_EMAIL: ${DPO_EMAIL:-}
     SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    # Connection used by every PostgresHook(postgres_conn_id="pii_hunter_db")
+    AIRFLOW_CONN_PII_HUNTER_DB: postgresql://airflow:airflow@postgres:5432/pii_hunter
+    # Used by the ETL jobs (SQLAlchemy) called from dag_remediation
+    DATABASE_URL: postgresql://airflow:airflow@postgres:5432/pii_hunter
+    # dag_remediation imports the etl/ package
+    PYTHONPATH: /opt/airflow
   volumes:
     - ./orchestration/dags:/opt/airflow/dags
     - ./orchestration/plugins:/opt/airflow/plugins
     - ./orchestration/config:/opt/airflow/config
+    - ./etl:/opt/airflow/etl
     - airflow-logs:/opt/airflow/logs
   depends_on:
     postgres:
@@ -204,6 +211,12 @@ services:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-in-prod}
       JWT_ALGORITHM: HS256
       MODEL_CONFIDENCE_THRESHOLD: "0.85"
+      DEMO_MODE: ${DEMO_MODE:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173}
+    # Hot reload for local development only (the image itself runs without it)
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+    volumes:
+      - ./api:/app/api
     depends_on:
       postgres:
         condition: service_healthy
@@ -212,7 +225,8 @@ services:
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # python:3.11-slim has no curl
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -234,7 +248,7 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
       interval: 15s
       timeout: 5s
       retries: 5

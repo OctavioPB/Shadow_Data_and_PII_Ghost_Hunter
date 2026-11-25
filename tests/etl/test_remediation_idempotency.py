@@ -13,16 +13,15 @@ All DB and S3 calls are mocked.
 
 from __future__ import annotations
 
-import json
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from etl.anonymizers.spark_anonymizer import run_spark_anonymization
 from etl.quarantine.quarantine_job import run_quarantine
 
-
 # ─── Helpers ─────────────────────────────────────────────────────────────────
+
 
 def _make_db_mock(already_done: bool = False):
     mock_conn = MagicMock()
@@ -52,6 +51,7 @@ def _make_s3_mock(objects=None):
 
 # ─── [S5-04] Anonymization idempotency ───────────────────────────────────────
 
+
 def test_anonymization_double_run_second_is_noop():
     """Running anonymization twice must skip on the second call."""
     # First run: not yet done
@@ -59,10 +59,15 @@ def test_anonymization_double_run_second_is_noop():
         patch("etl.anonymizers.spark_anonymizer._already_anonymized", return_value=False),
         patch("etl.anonymizers.spark_anonymizer._write_audit_record"),
         patch("etl.anonymizers.spark_anonymizer.SparkSession") as MockSpark,
+        patch(
+            "etl.anonymizers.spark_anonymizer.anonymize_dataframe",
+            side_effect=lambda df, cols: df.withColumn.return_value,
+        ),
     ):
         mock_spark = MagicMock()
-        MockSpark.builder.appName.return_value.master.return_value\
-            .config.return_value.getOrCreate.return_value = mock_spark
+        MockSpark.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = (
+            mock_spark
+        )
         df = MagicMock()
         df.count.return_value = 10
         mock_spark.read.parquet.return_value = df
@@ -70,7 +75,7 @@ def test_anonymization_double_run_second_is_noop():
         first = run_spark_anonymization(
             table_id="tbl-idem",
             source_path="s3://b/k/",
-            output_path="s3://b/k/",
+            output_path="s3://b/k__anonymized/",
             flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
             database_url="postgresql://localhost/test",
         )
@@ -82,7 +87,7 @@ def test_anonymization_double_run_second_is_noop():
         second = run_spark_anonymization(
             table_id="tbl-idem",
             source_path="s3://b/k/",
-            output_path="s3://b/k/",
+            output_path="s3://b/k__anonymized/",
             flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
             database_url="postgresql://localhost/test",
         )
@@ -100,7 +105,7 @@ def test_anonymization_no_spark_started_on_second_run():
         run_spark_anonymization(
             table_id="tbl-skip",
             source_path="s3://b/k/",
-            output_path="s3://b/k/",
+            output_path="s3://b/k__anonymized/",
             flagged_columns=[],
             database_url="db_url",
         )
@@ -109,6 +114,7 @@ def test_anonymization_no_spark_started_on_second_run():
 
 
 # ─── [S5-04] Quarantine idempotency ──────────────────────────────────────────
+
 
 def test_quarantine_double_run_second_is_noop():
     """Quarantine job must return 'already_quarantined' on second call."""
@@ -165,6 +171,7 @@ def test_quarantine_s3_not_called_on_second_run():
 
 # ─── [S5-04] Partial failure + re-run ────────────────────────────────────────
 
+
 def test_anonymization_partial_failure_then_rerun_completes():
     """
     Simulate: first run raises mid-way (Spark write fails).
@@ -174,23 +181,28 @@ def test_anonymization_partial_failure_then_rerun_completes():
     with (
         patch("etl.anonymizers.spark_anonymizer._already_anonymized", return_value=False),
         patch("etl.anonymizers.spark_anonymizer.SparkSession") as MockSpark,
+        patch(
+            "etl.anonymizers.spark_anonymizer.anonymize_dataframe",
+            side_effect=lambda df, cols: df.withColumn.return_value,
+        ),
     ):
         mock_spark = MagicMock()
-        MockSpark.builder.appName.return_value.master.return_value\
-            .config.return_value.getOrCreate.return_value = mock_spark
+        MockSpark.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = (
+            mock_spark
+        )
         df = MagicMock()
         df.count.return_value = 5
         mock_spark.read.parquet.return_value = df
         # Simulate write failure
-        df.withColumn.return_value.write.mode.return_value.parquet.side_effect = (
-            OSError("S3 write failed")
+        df.withColumn.return_value.write.mode.return_value.parquet.side_effect = OSError(
+            "S3 write failed"
         )
 
         with pytest.raises(OSError):
             run_spark_anonymization(
                 table_id="tbl-partial",
                 source_path="s3://b/k/",
-                output_path="s3://b/k/",
+                output_path="s3://b/k__anonymized/",
                 flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
                 database_url="db_url",
             )
@@ -200,10 +212,15 @@ def test_anonymization_partial_failure_then_rerun_completes():
         patch("etl.anonymizers.spark_anonymizer._already_anonymized", return_value=False),
         patch("etl.anonymizers.spark_anonymizer._write_audit_record") as mock_audit,
         patch("etl.anonymizers.spark_anonymizer.SparkSession") as MockSpark2,
+        patch(
+            "etl.anonymizers.spark_anonymizer.anonymize_dataframe",
+            side_effect=lambda df, cols: df.withColumn.return_value,
+        ),
     ):
         mock_spark2 = MagicMock()
-        MockSpark2.builder.appName.return_value.master.return_value\
-            .config.return_value.getOrCreate.return_value = mock_spark2
+        MockSpark2.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = (
+            mock_spark2
+        )
         df2 = MagicMock()
         df2.count.return_value = 5
         mock_spark2.read.parquet.return_value = df2
@@ -212,7 +229,7 @@ def test_anonymization_partial_failure_then_rerun_completes():
         result = run_spark_anonymization(
             table_id="tbl-partial",
             source_path="s3://b/k/",
-            output_path="s3://b/k/",
+            output_path="s3://b/k__anonymized/",
             flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
             database_url="db_url",
         )
@@ -247,7 +264,7 @@ def test_quarantine_partial_failure_then_rerun_completes():
             )
 
     # Second run: copy succeeds (manifest not yet written → runs clean)
-    mock_s3_ok = _make_s3_mock()
+    mock_s3_ok = _make_s3_mock([{"Key": "s/t/f.parquet", "Size": 100}])
     mock_engine, mock_conn = _make_db_mock(already_done=False)
 
     with (
@@ -265,3 +282,60 @@ def test_quarantine_partial_failure_then_rerun_completes():
 
     assert result["skipped"] is False
     assert result["file_count"] == 1
+
+
+# ─── Regression: unsafe paths ────────────────────────────────────────────────
+
+
+def test_anonymization_rejects_in_place_overwrite():
+    """Writing to the source path would delete the data before Spark reads it."""
+    with patch("etl.anonymizers.spark_anonymizer._already_anonymized") as already:
+        with pytest.raises(ValueError, match="must differ"):
+            run_spark_anonymization(
+                table_id="tbl-inplace",
+                source_path="s3://b/k/",
+                output_path="s3://b/k",
+                flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
+                database_url="db_url",
+            )
+    already.assert_not_called()
+
+
+def test_quarantine_does_not_move_sibling_prefixes():
+    """s3://b/data/users must not sweep up s3://b/data/users_backup/…"""
+    from etl.quarantine.quarantine_job import _move_s3_prefix
+
+    mock_s3 = _make_s3_mock(
+        [
+            {"Key": "data/users/part-0.parquet", "Size": 10},
+            {"Key": "data/users_backup/part-0.parquet", "Size": 99},
+        ]
+    )
+    count, size = _move_s3_prefix(mock_s3, "b", "data/users", "q", "pending/t/")
+
+    assert (count, size) == (1, 10)
+    mock_s3.delete_object.assert_called_once_with(Bucket="b", Key="data/users/part-0.parquet")
+    assert mock_s3.copy_object.call_args.kwargs["Key"] == "pending/t/part-0.parquet"
+
+
+def test_quarantine_sql_uses_cast_not_double_colon():
+    """`:param::jsonb` is not a bind parameter for SQLAlchemy text()."""
+    mock_s3 = _make_s3_mock([{"Key": "s/t/f.parquet", "Size": 1}])
+    mock_engine, mock_conn = _make_db_mock(already_done=False)
+    with (
+        patch("etl.quarantine.quarantine_job._already_quarantined", return_value=False),
+        patch("etl.quarantine.quarantine_job.boto3") as mock_boto,
+        patch("etl.quarantine.quarantine_job.sa.create_engine", return_value=mock_engine),
+    ):
+        mock_boto.client.return_value = mock_s3
+        run_quarantine(
+            table_id="tbl-cast",
+            source_s3_path="s3://staging/s/t/",
+            flagged_categories=["EMAIL"],
+            database_url="db_url",
+        )
+    for c in mock_conn.execute.call_args_list:
+        stmt, params = c.args[0], c.args[1]
+        assert "::jsonb" not in str(stmt)
+        # every supplied parameter must be recognised as a bind parameter
+        assert set(params) <= set(stmt._bindparams)

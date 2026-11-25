@@ -24,12 +24,10 @@ import json
 import time
 from pathlib import Path
 
-import numpy as np
-import torch
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import classification_report
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
 
-from ml.data.pii_dataset import ID2LABEL, LABEL2ID, PII_LABELS
+from ml.data.pii_dataset import PII_LABELS
 
 # ─── Known PII Fixtures ───────────────────────────────────────────────────────
 # Each fixture is (column_name, value, expected_label).
@@ -90,6 +88,7 @@ KNOWN_PII_FIXTURES: list[tuple[str, str, str]] = [
 
 # ─── Inference helpers ────────────────────────────────────────────────────────
 
+
 def _load_pipeline(model_dir: str, device: int = -1):
     """Load a HuggingFace text-classification pipeline."""
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
@@ -99,7 +98,7 @@ def _load_pipeline(model_dir: str, device: int = -1):
         model=model,
         tokenizer=tokenizer,
         device=device,
-        return_all_scores=True,
+        top_k=None,  # all label scores; `return_all_scores` was removed in transformers 5
         truncation=True,
         max_length=128,
     )
@@ -122,6 +121,7 @@ def _classify_batch(
 
 # ─── Fixture evaluation ───────────────────────────────────────────────────────
 
+
 def evaluate_fixtures(
     clf_pipeline,
     threshold: float,
@@ -132,7 +132,7 @@ def evaluate_fixtures(
 
     results = []
     correct = 0
-    for (col, val, expected), scores in zip(KNOWN_PII_FIXTURES, score_maps):
+    for (col, val, expected), scores in zip(KNOWN_PII_FIXTURES, score_maps, strict=False):
         top_label = max(scores, key=scores.__getitem__)
         top_conf = scores[top_label]
         above_threshold = top_conf >= threshold
@@ -161,6 +161,7 @@ def evaluate_fixtures(
 
 
 # ─── Test-split evaluation ────────────────────────────────────────────────────
+
 
 def evaluate_test_split(
     clf_pipeline,
@@ -232,6 +233,7 @@ def evaluate_test_split(
 
 # ─── Main evaluation routine ──────────────────────────────────────────────────
 
+
 def run_evaluation(
     model_dir: str,
     test_data_path: str,
@@ -255,8 +257,7 @@ def run_evaluation(
         "fixture_evaluation": fixture_results,
         "test_split_evaluation": test_results,
         "passed": (
-            fixture_results["fixture_accuracy"] >= 0.95
-            and test_results["macro_f1"] >= 0.90
+            fixture_results["fixture_accuracy"] >= 0.95 and test_results["macro_f1"] >= 0.90
         ),
     }
 
@@ -276,6 +277,7 @@ def run_evaluation(
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate PII classifier")

@@ -19,9 +19,11 @@ from __future__ import annotations
 import logging
 import os
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 import structlog
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from ml.inference.metrics import (
@@ -57,18 +59,9 @@ structlog.configure(
 log = structlog.get_logger()
 
 # ─── Application ──────────────────────────────────────────────────────────────
-app = FastAPI(
-    title="PII Inference Service",
-    description="Classifies column samples for PII using a fine-tuned DistilBERT model.",
-    version=os.environ.get("MODEL_VERSION", "dev"),
-    # Disable default /docs to avoid exposing sample values in Swagger UI
-    docs_url=None,
-    redoc_url=None,
-)
 
 
-@app.on_event("startup")
-async def _warmup_model() -> None:
+def _warmup_model() -> None:
     """Eagerly load the model so the first request is not slow."""
     from ml.inference.model_loader import get_pipeline
 
@@ -82,7 +75,26 @@ async def _warmup_model() -> None:
         log.warning("model_load_failed", error=str(exc))
 
 
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # lifespan replaces @app.on_event("startup"), which Starlette 1.0 removed.
+    _warmup_model()
+    yield
+
+
+app = FastAPI(
+    title="PII Inference Service",
+    description="Classifies column samples for PII using a fine-tuned DistilBERT model.",
+    version=os.environ.get("MODEL_VERSION", "dev"),
+    # Disable default /docs to avoid exposing sample values in Swagger UI
+    docs_url=None,
+    redoc_url=None,
+    lifespan=_lifespan,
+)
+
+
 # ─── Routes ───────────────────────────────────────────────────────────────────
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
@@ -98,8 +110,11 @@ async def metrics() -> Response:
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
+# Plain `def` on purpose: model inference is CPU-bound and blocking. FastAPI
+# runs sync endpoints in its threadpool; an `async def` here would block the
+# event loop, stalling /health (liveness probes) and every concurrent request.
 @app.post("/infer", response_model=InferResponse)
-async def infer(request: InferRequest) -> InferResponse:
+def infer(request: InferRequest) -> InferResponse:
     t_start = time.monotonic()
     status = "success"
     results: list[ColumnResult] = []

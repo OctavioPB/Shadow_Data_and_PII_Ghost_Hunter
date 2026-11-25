@@ -1,16 +1,26 @@
 from __future__ import annotations
 
+import hmac
+import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+from jwt import PyJWTError
 
-SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
+log = logging.getLogger(__name__)
+
+_DEV_SECRET = "dev-secret-key-change-in-production"
+# `or` (not a get() default) so an empty JWT_SECRET_KEY= line in .env does not
+# produce an empty signing key.
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY") or _DEV_SECRET
+if SECRET_KEY == _DEV_SECRET:
+    log.warning("JWT_SECRET_KEY is not set — using the insecure development key")
 ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
@@ -42,14 +52,15 @@ _USERS: dict[str, dict[str, str]] = {
 
 def authenticate_user(email: str, password: str) -> dict[str, str] | None:
     user = _USERS.get(email)
-    if not user or user["password"] != password:
+    # Constant-time comparison: `!=` leaks password prefix length via timing.
+    if not user or not hmac.compare_digest(user["password"].encode(), password.encode()):
         return None
     return {"email": email, "role": user["role"], "name": user["name"]}
 
 
 def create_access_token(data: dict[str, Any]) -> str:
     payload = data.copy()
-    payload["exp"] = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    payload["exp"] = datetime.now(UTC) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -61,8 +72,10 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict[str, str
         if not email or not role:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         return {"email": email, "role": role, "name": payload.get("name", "")}
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    except PyJWTError:  # bad signature, expired, malformed…
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from None
 
 
 def require_role(*roles: str):

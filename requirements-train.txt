@@ -1,0 +1,10 @@
+# Training pipeline (.github/workflows/train.yml): ML stack + experiment tracking.
+# Kept out of requirements-dev.txt: nothing outside ml/training/train.py imports
+# mlflow, and it is a large dependency tree.
+-r requirements-ml.txt
+mlflow==3.18.0
+# transformers 5 requires accelerate for Trainer
+accelerate==1.16.0
+pandas==2.2.2
+numpy==1.26.4
+pyarrow==23.0.1

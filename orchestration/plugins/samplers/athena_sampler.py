@@ -1,15 +1,18 @@
 import logging
+import re
 import time
 
 import boto3
 import pandas as pd
-
 from samplers.base_sampler import BaseSampler, SampleResult
 
 logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL_S = 2
 _QUERY_TIMEOUT_S = 300
+# Glue/Athena identifiers: letters, digits, underscore (hyphens allowed in
+# quoted names). source_name comes from Kafka events, i.e. untrusted input.
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_\-]{1,255}$")
 
 
 class AthenaSampler(BaseSampler):
@@ -37,10 +40,12 @@ class AthenaSampler(BaseSampler):
         """
         parts = source_name.split(".", 1)
         database, table = (parts[0], parts[1]) if len(parts) == 2 else ("default", parts[0])
+        for ident in (database, table):
+            if not _IDENTIFIER_RE.match(ident):
+                # Blocks injection such as "db.t UNION SELECT * FROM other.secrets"
+                raise ValueError(f"Invalid Athena identifier: {ident!r}")
 
-        query = (
-            f"SELECT * FROM {database}.{table} ORDER BY rand() LIMIT {self.MAX_ROWS}"  # noqa: S608
-        )
+        query = f'SELECT * FROM "{database}"."{table}" ORDER BY rand() LIMIT {self.MAX_ROWS}'  # noqa: S608
 
         athena = boto3.client("athena", region_name=self.aws_region)
         response = athena.start_query_execution(
@@ -74,16 +79,20 @@ class AthenaSampler(BaseSampler):
                 raise RuntimeError(f"Athena query {execution_id} {state}: {reason}")
             time.sleep(_POLL_INTERVAL_S)
         else:
-            raise TimeoutError(
-                f"Athena query {execution_id} timed out after {_QUERY_TIMEOUT_S}s"
-            )
+            raise TimeoutError(f"Athena query {execution_id} timed out after {_QUERY_TIMEOUT_S}s")
 
         results = athena.get_query_results(QueryExecutionId=execution_id)
         metadata = results["ResultSet"]["ResultSetMetadata"]["ColumnInfo"]
         columns = [col["Label"] for col in metadata]
 
-        rows = [
-            [cell.get("VarCharValue", "") for cell in row["Data"]]
-            for row in results["ResultSet"]["Rows"][1:]  # skip header row
-        ]
+        raw_rows = results["ResultSet"]["Rows"][1:]  # skip header row
+        # A page holds at most 1000 rows *including* the header, so follow
+        # NextToken to get the full MAX_ROWS sample.
+        next_token = results.get("NextToken")
+        while isinstance(next_token, str) and next_token:
+            page = athena.get_query_results(QueryExecutionId=execution_id, NextToken=next_token)
+            raw_rows.extend(page["ResultSet"]["Rows"])
+            next_token = page.get("NextToken")
+
+        rows = [[cell.get("VarCharValue", "") for cell in row["Data"]] for row in raw_rows]
         return pd.DataFrame(rows, columns=columns)

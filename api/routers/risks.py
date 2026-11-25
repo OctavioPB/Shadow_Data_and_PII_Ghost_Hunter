@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
 import math
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,27 +25,32 @@ from api.schemas.risks import (
 
 router = APIRouter(prefix="/api/v1", tags=["risks"])
 
-_RISK_BASE_QUERY = """
-    SELECT
-        pf.table_id,
-        se.source_name,
-        se.data_source_type,
-        se.owner_email,
-        se.bucket,
-        array_agg(DISTINCT pf.pii_category)  AS pii_categories,
-        max(pf.confidence)                    AS max_confidence,
-        count(*) FILTER (WHERE pf.flagged = true) AS flagged_column_count,
-        max(pf.created_at)                    AS last_scanned,
-        CASE
-            WHEN count(*) FILTER (WHERE pf.status = 'quarantined') > 0 THEN 'quarantined'
-            WHEN count(*) FILTER (WHERE pf.status = 'remediated')  > 0 THEN 'remediated'
-            WHEN count(*) FILTER (WHERE pf.status = 'flagged')     > 0 THEN 'flagged'
-            ELSE 'classified'
-        END AS status
-    FROM pii_findings pf
-    JOIN scanner_events se ON pf.scanner_event_id = se.id
-    WHERE pf.flagged = true
+# Table-level status derived from its column findings (most severe wins).
+_TABLE_STATUS_SQL = """
+    CASE
+        WHEN count(*) FILTER (WHERE pf.status = 'quarantined') > 0 THEN 'quarantined'
+        WHEN count(*) FILTER (WHERE pf.status = 'remediated')  > 0 THEN 'remediated'
+        WHEN count(*) FILTER (WHERE pf.status = 'flagged')     > 0 THEN 'flagged'
+        ELSE 'classified'
+    END
 """
+
+# Tables whose path suggests a copy of production data (backup/staging/…).
+_CHILD_KEYWORDS = frozenset(
+    {
+        "backup",
+        "copy",
+        "dump",
+        "staging",
+        "dev",
+        "test",
+        "temp",
+        "archive",
+        "export",
+        "sample",
+        "snapshot",
+    }
+)
 
 
 @router.get("/risks", response_model=RisksResponse)
@@ -52,99 +58,73 @@ async def list_risks(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     pii_category: str | None = Query(None),
-    status_filter: str | None = Query(None, alias="status"),
+    status_filter: str | None = Query(
+        None, alias="status", pattern="^(quarantined|remediated|flagged|classified)$"
+    ),
     source: str | None = Query(None),
     date_from: datetime | None = Query(None),
     date_to: datetime | None = Query(None),
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ) -> RisksResponse:
-    conditions = ["pf.flagged = true"]
+    where = ["pf.flagged = true"]
+    having: list[str] = []
     params: dict[str, Any] = {}
 
-    if pii_category:
-        conditions.append(":pii_category = ANY(array_agg(pf.pii_category))")
-
     if source:
-        conditions.append("se.source_name ILIKE :source")
+        where.append("se.source_name ILIKE :source")
         params["source"] = f"%{source}%"
-
     if date_from:
-        conditions.append("pf.created_at >= :date_from")
+        where.append("pf.created_at >= :date_from")
         params["date_from"] = date_from
-
     if date_to:
-        conditions.append("pf.created_at <= :date_to")
+        where.append("pf.created_at <= :date_to")
         params["date_to"] = date_to
-
-    where_clause = "WHERE " + " AND ".join(conditions)
-
-    having_clause = ""
     if pii_category:
-        having_clause = "HAVING :pii_category = ANY(array_agg(DISTINCT pf.pii_category))"
+        having.append("bool_or(pf.pii_category = :pii_category)")
         params["pii_category"] = pii_category
 
-    status_having = ""
+    having_sql = f"HAVING {' AND '.join(having)}" if having else ""
+    outer_where = "WHERE status = :status" if status_filter else ""
     if status_filter:
-        having_parts = [having_clause] if having_clause else []
-        status_sql = {
-            "quarantined": "count(*) FILTER (WHERE pf.status = 'quarantined') > 0",
-            "remediated": "count(*) FILTER (WHERE pf.status = 'remediated') > 0",
-            "flagged": "count(*) FILTER (WHERE pf.status = 'flagged') > 0",
-        }.get(status_filter)
-        if status_sql:
-            having_parts.append(status_sql)
-        if having_parts:
-            having_clause = "HAVING " + " AND ".join(having_parts)
+        params["status"] = status_filter
 
-    data_query = text(f"""
-        SELECT
-            pf.table_id,
-            se.source_name,
-            se.data_source_type,
-            se.owner_email,
-            array_agg(DISTINCT pf.pii_category)            AS pii_categories,
-            max(pf.confidence)                              AS max_confidence,
-            count(*) FILTER (WHERE pf.flagged = true)         AS flagged_column_count,
-            max(pf.created_at)                             AS last_scanned,
-            CASE
-                WHEN count(*) FILTER (WHERE pf.status = 'quarantined') > 0 THEN 'quarantined'
-                WHEN count(*) FILTER (WHERE pf.status = 'remediated')  > 0 THEN 'remediated'
-                WHEN count(*) FILTER (WHERE pf.status = 'flagged')     > 0 THEN 'flagged'
-                ELSE 'classified'
-            END AS status
-        FROM pii_findings pf
-        JOIN scanner_events se ON pf.scanner_event_id = se.id
-        WHERE pf.flagged = true
-        {"AND se.source_name ILIKE :source" if source else ""}
-        {"AND pf.created_at >= :date_from" if date_from else ""}
-        {"AND pf.created_at <= :date_to" if date_to else ""}
-        GROUP BY pf.table_id, se.source_name, se.data_source_type, se.owner_email
-        {"HAVING :pii_category = ANY(array_agg(DISTINCT pf.pii_category))" if pii_category else ""}
-        ORDER BY max(pf.confidence) DESC
-        LIMIT :limit OFFSET :offset
-    """)
-
-    count_query = text(f"""
-        SELECT count(*) FROM (
-            SELECT pf.table_id
+    # One CTE feeds both the page and the total so they can never disagree.
+    cte = f"""
+        WITH risks AS (
+            SELECT
+                pf.table_id,
+                se.source_name,
+                se.data_source_type,
+                se.owner_email,
+                array_agg(DISTINCT pf.pii_category)  AS pii_categories,
+                max(pf.confidence)                   AS max_confidence,
+                count(*)                             AS flagged_column_count,
+                max(pf.created_at)                   AS last_scanned,
+                {_TABLE_STATUS_SQL}                  AS status
             FROM pii_findings pf
             JOIN scanner_events se ON pf.scanner_event_id = se.id
-            WHERE pf.flagged = true
-            {"AND se.source_name ILIKE :source" if source else ""}
-            {"AND pf.created_at >= :date_from" if date_from else ""}
-            {"AND pf.created_at <= :date_to" if date_to else ""}
-            GROUP BY pf.table_id
-            {"HAVING :pii_category = ANY(array_agg(DISTINCT pf.pii_category))" if pii_category else ""}
-        ) sub
-    """)
+            WHERE {' AND '.join(where)}
+            GROUP BY pf.table_id, se.source_name, se.data_source_type, se.owner_email
+            {having_sql}
+        )
+    """
 
-    offset = (page - 1) * size
-    params["limit"] = size
-    params["offset"] = offset
+    data_query = text(
+        f"""
+        {cte}
+        SELECT * FROM risks
+        {outer_where}
+        ORDER BY max_confidence DESC, table_id
+        LIMIT :limit OFFSET :offset
+    """
+    )
+    count_query = text(f"{cte} SELECT count(*) FROM risks {outer_where}")
 
-    rows = (await db.execute(data_query, params)).fetchall()
-    total = (await db.execute(count_query, params)).scalar() or 0
+    rows = (
+        await db.execute(data_query, {**params, "limit": size, "offset": (page - 1) * size})
+    ).fetchall()
+    total = int((await db.execute(count_query, params)).scalar() or 0)
 
     items = [
         RiskItem(
@@ -163,10 +143,10 @@ async def list_risks(
 
     return RisksResponse(
         items=items,
-        total=int(total),
+        total=total,
         page=page,
         size=size,
-        pages=math.ceil(int(total) / size) if size else 1,
+        pages=math.ceil(total / size),
     )
 
 
@@ -175,24 +155,26 @@ async def stats_summary(
     db: AsyncSession = Depends(get_db),
     _user: dict = Depends(get_current_user),
 ) -> StatsSummary:
+    # Only flagged findings count, so remediated can never exceed total_flagged.
     result = await db.execute(
-        text("""
+        text(
+            """
             SELECT
-                count(DISTINCT pf.table_id) FILTER (WHERE pf.flagged = true)             AS total_flagged,
-                count(DISTINCT pf.table_id) FILTER (WHERE pf.status IN ('remediated', 'quarantined'))
-                                                                                       AS remediated,
-                count(DISTINCT pf.table_id) FILTER (WHERE pf.flagged = true
-                    AND pf.status NOT IN ('remediated', 'quarantined'))                AS pending_review
-            FROM pii_findings pf
-        """)
+                count(DISTINCT table_id)                                         AS total_flagged,
+                count(DISTINCT table_id)
+                    FILTER (WHERE status IN ('remediated', 'quarantined'))       AS remediated,
+                count(DISTINCT table_id)
+                    FILTER (WHERE status NOT IN ('remediated', 'quarantined'))   AS pending_review
+            FROM pii_findings
+            WHERE flagged = true
+        """
+        )
     )
     row = result.fetchone()
     total_flagged = int(row.total_flagged or 0)
     remediated = int(row.remediated or 0)
     pending_review = int(row.pending_review or 0)
-    compliance_score = (
-        round((remediated / total_flagged) * 100, 1) if total_flagged > 0 else 100.0
-    )
+    compliance_score = round((remediated / total_flagged) * 100, 1) if total_flagged > 0 else 100.0
     return StatsSummary(
         total_flagged=total_flagged,
         remediated=remediated,
@@ -208,21 +190,28 @@ async def pii_report(
     _user: dict = Depends(get_current_user),
 ) -> PIIReport:
     meta = await db.execute(
-        text("""
-            SELECT se.source_name, se.data_source_type, se.owner_email
+        text(
+            """
+            SELECT se.source_name, se.data_source_type, se.owner_email,
+                   max(pf.created_at) OVER () AS last_scanned
             FROM pii_findings pf
             JOIN scanner_events se ON pf.scanner_event_id = se.id
             WHERE pf.table_id = :tid
+            ORDER BY pf.created_at DESC
             LIMIT 1
-        """),
+        """
+        ),
         {"tid": table_id},
     )
     meta_row = meta.fetchone()
     if not meta_row:
         raise HTTPException(status_code=404, detail="Table not found")
 
+    # column_samples is unique per (scanner_event_id, column_name); joining on
+    # table_id alone duplicated findings when a table was sampled more than once.
     findings = await db.execute(
-        text("""
+        text(
+            """
             SELECT
                 pf.column_name,
                 pf.pii_category,
@@ -231,15 +220,12 @@ async def pii_report(
                 cs.sample_count
             FROM pii_findings pf
             LEFT JOIN column_samples cs
-                ON cs.table_id = pf.table_id AND cs.column_name = pf.column_name
+                ON cs.scanner_event_id = pf.scanner_event_id
+               AND cs.column_name = pf.column_name
             WHERE pf.table_id = :tid AND pf.flagged = true
             ORDER BY pf.confidence DESC
-        """),
-        {"tid": table_id},
-    )
-
-    last_scanned_q = await db.execute(
-        text("SELECT max(created_at) FROM pii_findings WHERE table_id = :tid"),
+        """
+        ),
         {"tid": table_id},
     )
 
@@ -260,7 +246,7 @@ async def pii_report(
         data_source_type=meta_row.data_source_type,
         owner_email=meta_row.owner_email,
         flagged_columns=columns,
-        last_scanned=last_scanned_q.scalar(),
+        last_scanned=meta_row.last_scanned,
     )
 
 
@@ -279,15 +265,20 @@ async def remediate(
         raise HTTPException(status_code=404, detail="Table not found")
 
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO audit_log (event_type, table_id, actor, details_json)
             VALUES (:event_type, :table_id, :actor, CAST(:details AS jsonb))
-        """),
+        """
+        ),
         {
             "event_type": f"manual_{body.action}_requested",
             "table_id": table_id,
             "actor": user["email"],
-            "details": f'{{"action":"{body.action}","notes":"{body.notes or ""}","source":"dashboard"}}',
+            # json.dumps escapes user-supplied notes (quotes, backslashes, …)
+            "details": json.dumps(
+                {"action": body.action, "notes": body.notes or "", "source": "dashboard"}
+            ),
         },
     )
     await db.commit()
@@ -306,7 +297,8 @@ async def data_sources(
     _user: dict = Depends(get_current_user),
 ) -> DataSourcesResponse:
     rows = await db.execute(
-        text("""
+        text(
+            """
             SELECT
                 se.source_name,
                 se.data_source_type,
@@ -319,8 +311,9 @@ async def data_sources(
             FROM scanner_events se
             LEFT JOIN pii_findings pf ON pf.scanner_event_id = se.id
             GROUP BY se.source_name, se.data_source_type, se.bucket
-            ORDER BY flagged_count DESC, max_confidence DESC
-        """)
+            ORDER BY flagged_count DESC, max_confidence DESC NULLS LAST
+        """
+        )
     )
 
     items = [
@@ -342,6 +335,35 @@ async def data_sources(
 
 # ── Lineage ───────────────────────────────────────────────────────────────────
 
+
+def _lineage_query(this_side: str, other_side: str) -> str:
+    """Edges where *this_side* = :tid, annotated with the other table's status."""
+    # source_name is resolved through pii_findings → scanner_events: lineage
+    # edges store table_ids, which are not scanner_events.source_name values.
+    return f"""
+        SELECT le.{other_side} AS table_id,
+               min(se.source_name) AS source_name,
+               le.confidence, le.inference_method,
+               {_TABLE_STATUS_SQL} AS status
+        FROM lineage_edges le
+        LEFT JOIN pii_findings pf
+            ON pf.table_id = le.{other_side} AND pf.flagged = true
+        LEFT JOIN scanner_events se ON se.id = pf.scanner_event_id
+        WHERE le.{this_side} = :tid
+        GROUP BY le.{other_side}, le.confidence, le.inference_method
+    """
+
+
+def _lineage_node(r: Any) -> dict[str, Any]:
+    return {
+        "table_id": r.table_id,
+        "source_name": r.source_name,
+        "confidence": round(float(r.confidence), 2),
+        "inference_method": r.inference_method,
+        "status": r.status or "unknown",
+    }
+
+
 @router.get("/tables/{table_id}/lineage")
 async def get_lineage(
     table_id: str,
@@ -349,67 +371,15 @@ async def get_lineage(
     _user: dict = Depends(get_current_user),
 ) -> dict:
     parents = await db.execute(
-        text("""
-            SELECT le.parent_table_id, se.source_name,
-                   le.confidence, le.inference_method,
-                   CASE
-                     WHEN count(*) FILTER (WHERE pf.status = 'quarantined') > 0 THEN 'quarantined'
-                     WHEN count(*) FILTER (WHERE pf.status = 'remediated')  > 0 THEN 'remediated'
-                     WHEN count(*) FILTER (WHERE pf.status = 'flagged')     > 0 THEN 'flagged'
-                     ELSE 'classified'
-                   END AS status
-            FROM lineage_edges le
-            LEFT JOIN scanner_events se ON se.source_name = le.parent_table_id
-            LEFT JOIN pii_findings pf
-                ON pf.table_id = le.parent_table_id AND pf.flagged = true
-            WHERE le.child_table_id = :tid
-            GROUP BY le.parent_table_id, se.source_name,
-                     le.confidence, le.inference_method
-        """),
-        {"tid": table_id},
+        text(_lineage_query("child_table_id", "parent_table_id")), {"tid": table_id}
     )
     children = await db.execute(
-        text("""
-            SELECT le.child_table_id, se.source_name,
-                   le.confidence, le.inference_method,
-                   CASE
-                     WHEN count(*) FILTER (WHERE pf.status = 'quarantined') > 0 THEN 'quarantined'
-                     WHEN count(*) FILTER (WHERE pf.status = 'remediated')  > 0 THEN 'remediated'
-                     WHEN count(*) FILTER (WHERE pf.status = 'flagged')     > 0 THEN 'flagged'
-                     ELSE 'classified'
-                   END AS status
-            FROM lineage_edges le
-            LEFT JOIN scanner_events se ON se.source_name = le.child_table_id
-            LEFT JOIN pii_findings pf
-                ON pf.table_id = le.child_table_id AND pf.flagged = true
-            WHERE le.parent_table_id = :tid
-            GROUP BY le.child_table_id, se.source_name,
-                     le.confidence, le.inference_method
-        """),
-        {"tid": table_id},
+        text(_lineage_query("parent_table_id", "child_table_id")), {"tid": table_id}
     )
     return {
         "table_id": table_id,
-        "parents": [
-            {
-                "table_id": r.parent_table_id,
-                "source_name": r.source_name,
-                "confidence": round(float(r.confidence), 2),
-                "inference_method": r.inference_method,
-                "status": r.status or "unknown",
-            }
-            for r in parents.fetchall()
-        ],
-        "children": [
-            {
-                "table_id": r.child_table_id,
-                "source_name": r.source_name,
-                "confidence": round(float(r.confidence), 2),
-                "inference_method": r.inference_method,
-                "status": r.status or "unknown",
-            }
-            for r in children.fetchall()
-        ],
+        "parents": [_lineage_node(r) for r in parents.fetchall()],
+        "children": [_lineage_node(r) for r in children.fetchall()],
     }
 
 
@@ -421,66 +391,73 @@ async def infer_lineage(
 ) -> dict:
     """Path-heuristic lineage: tables named backup/staging/dev/temp/copy/dump
     are treated as children of prod-like sources."""
-    child_keywords = {
-        "backup", "copy", "dump", "staging", "dev", "test",
-        "temp", "archive", "export", "sample", "snapshot",
-    }
-
     this = await db.execute(
-        text("SELECT source_name FROM scanner_events WHERE id::text = :tid OR source_name = :tid LIMIT 1"),
+        text(
+            """
+            SELECT se.source_name
+            FROM pii_findings pf
+            JOIN scanner_events se ON se.id = pf.scanner_event_id
+            WHERE pf.table_id = :tid
+            LIMIT 1
+        """
+        ),
         {"tid": table_id},
     )
     this_row = this.fetchone()
     if not this_row:
-        return {"created": 0, "message": "Table not found"}
+        raise HTTPException(status_code=404, detail="Table not found")
 
-    this_source = this_row.source_name
-    this_is_child = any(kw in this_source.lower() for kw in child_keywords)
+    this_is_child = any(kw in this_row.source_name.lower() for kw in _CHILD_KEYWORDS)
 
     others = await db.execute(
-        text("""
+        text(
+            """
             SELECT DISTINCT pf.table_id, se.source_name
             FROM pii_findings pf
             JOIN scanner_events se ON se.id = pf.scanner_event_id
             WHERE pf.flagged = true AND pf.table_id != :tid
-        """),
+        """
+        ),
         {"tid": table_id},
     )
 
-    created = 0
+    edges: list[dict[str, str]] = []
     for row in others.fetchall():
-        other_is_child = any(kw in row.source_name.lower() for kw in child_keywords)
-
+        other_is_child = any(kw in row.source_name.lower() for kw in _CHILD_KEYWORDS)
         if this_is_child and not other_is_child:
-            parent_id, child_id = row.table_id, table_id
+            edges.append({"p": row.table_id, "c": table_id})
         elif not this_is_child and other_is_child:
-            parent_id, child_id = table_id, row.table_id
-        else:
-            continue
+            edges.append({"p": table_id, "c": row.table_id})
 
-        try:
-            await db.execute(
-                text("""
-                    INSERT INTO lineage_edges
-                        (parent_table_id, child_table_id, confidence, inference_method)
-                    VALUES (:p, :c, 0.6, 'path_heuristic')
-                    ON CONFLICT (parent_table_id, child_table_id) DO NOTHING
-                """),
-                {"p": parent_id, "c": child_id},
-            )
+    created = 0
+    for edge in edges:
+        # RETURNING lets us count only edges that were actually new.
+        res = await db.execute(
+            text(
+                """
+                INSERT INTO lineage_edges
+                    (parent_table_id, child_table_id, confidence, inference_method)
+                VALUES (:p, :c, 0.6, 'path_heuristic')
+                ON CONFLICT (parent_table_id, child_table_id) DO NOTHING
+                RETURNING id
+            """
+            ),
+            edge,
+        )
+        if res.fetchone() is not None:
             created += 1
-        except Exception:
-            await db.rollback()
 
     await db.execute(
-        text("""
+        text(
+            """
             INSERT INTO audit_log (event_type, table_id, actor, details_json)
             VALUES ('lineage_inferred', :tid, :actor, CAST(:d AS jsonb))
-        """),
+        """
+        ),
         {
             "tid": table_id,
             "actor": user["email"],
-            "d": f'{{"edges_created":{created},"method":"path_heuristic"}}',
+            "d": json.dumps({"edges_created": created, "method": "path_heuristic"}),
         },
     )
     await db.commit()
@@ -494,27 +471,27 @@ async def cascade_review(
     user: dict = Depends(require_role("dpo", "admin")),
 ) -> dict:
     children = await db.execute(
-        text("""
+        text(
+            """
             SELECT child_table_id FROM lineage_edges
             WHERE parent_table_id = :tid AND confidence >= 0.7
-        """),
+        """
+        ),
         {"tid": table_id},
     )
     child_ids = [r.child_table_id for r in children.fetchall()]
     if not child_ids:
         return {"queued": 0, "message": "No confirmed children to cascade to"}
 
-    for cid in child_ids:
-        await db.execute(
-            text("""
-                INSERT INTO audit_log (event_type, table_id, actor, details_json)
-                VALUES ('cascade_review_queued', :cid, :actor, CAST(:d AS jsonb))
-            """),
-            {
-                "cid": cid,
-                "actor": user["email"],
-                "d": f'{{"triggered_by":"{table_id}"}}',
-            },
-        )
+    details = json.dumps({"triggered_by": table_id})
+    await db.execute(
+        text(
+            """
+            INSERT INTO audit_log (event_type, table_id, actor, details_json)
+            VALUES ('cascade_review_queued', :cid, :actor, CAST(:d AS jsonb))
+        """
+        ),
+        [{"cid": cid, "actor": user["email"], "d": details} for cid in child_ids],
+    )
     await db.commit()
     return {"queued": len(child_ids), "child_table_ids": child_ids}

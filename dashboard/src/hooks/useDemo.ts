@@ -29,7 +29,7 @@ export function useDemoSeed() {
       if (!resp.ok) {
         let detail = `HTTP ${resp.status}`;
         try {
-          const body = await resp.json() as { detail?: string };
+          const body = (await resp.json()) as { detail?: string };
           detail = body.detail ?? detail;
         } catch {
           /* non-JSON body -- keep the status code message */

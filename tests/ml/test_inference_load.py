@@ -18,7 +18,6 @@ from unittest.mock import patch
 
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture(scope="module")
@@ -30,9 +29,11 @@ def base_url():
         patch("ml.inference.model_loader.load_duration_seconds", return_value=0.5),
         patch("ml.inference.app.classify_column", return_value=("NONE", 0.55)),
     ):
-        from ml.inference.app import app
         import threading
+
         import uvicorn
+
+        from ml.inference.app import app
 
         config = uvicorn.Config(app, host="127.0.0.1", port=18001, log_level="critical")
         server = uvicorn.Server(config)
@@ -79,9 +80,7 @@ async def test_100_concurrent_requests_p95_under_2s(base_url):
     """100 simultaneous /infer requests — p95 latency must be < 2 s."""
     n = 100
     async with httpx.AsyncClient() as client:
-        latencies = await asyncio.gather(
-            *[_send_request(client, base_url, i) for i in range(n)]
-        )
+        latencies = await asyncio.gather(*[_send_request(client, base_url, i) for i in range(n)])
 
     latencies_sorted = sorted(latencies)
     p50 = latencies_sorted[int(n * 0.50)]
@@ -103,9 +102,7 @@ async def test_throughput_minimum_rps(base_url):
     n = 50
     t_start = time.monotonic()
     async with httpx.AsyncClient() as client:
-        await asyncio.gather(
-            *[_send_request(client, base_url, i) for i in range(n)]
-        )
+        await asyncio.gather(*[_send_request(client, base_url, i) for i in range(n)])
     total = time.monotonic() - t_start
     rps = n / total
     print(f"\nThroughput: {rps:.1f} rps over {total:.2f} s")

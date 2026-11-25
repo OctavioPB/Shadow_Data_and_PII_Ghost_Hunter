@@ -1,8 +1,13 @@
+# Core platform: API, scanner, data/ETL jobs.
+# The ML stack lives in requirements-ml.txt (inference + tests) and
+# requirements-train.txt (training, adds mlflow). CI audits every file.
+
 # ─── Web framework ───────────────────────────
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
-pydantic==2.7.1
-pydantic-settings==2.2.1
+fastapi==0.165.0
+starlette==1.10.0
+uvicorn[standard]==0.54.0
+pydantic==2.14.4
+pydantic-settings==2.16.3
 
 # ─── Database ────────────────────────────────
 sqlalchemy==2.0.30
@@ -18,40 +23,40 @@ confluent-kafka==2.4.0
 fastavro==1.9.4
 
 # ─── Airflow providers ───────────────────────
-apache-airflow-providers-postgres==5.11.0
-apache-airflow-providers-amazon==8.22.0
+# Not listed here: they pull in apache-airflow, which requires SQLAlchemy<2 and
+# made this file unresolvable next to sqlalchemy==2.0.30. The postgres and
+# amazon providers ship with the apache/airflow image the DAGs run in.
 
 # ─── Data / sampling ─────────────────────────
 pandas==2.2.2
-pyarrow==16.1.0
+# Pinned to NumPy 1.x: tested with pandas 2.2 and pyarrow 23. torch 2.15 also
+# supports NumPy 2, so numpy, pandas and pyarrow (26.x needs NumPy 2) can move
+# to 2.x together later. Never leave numpy unpinned: with torch < 2.4, NumPy 2
+# breaks the HF pipeline at runtime, and pyarrow fails only at import.
+numpy==1.26.4
+pyarrow==23.0.1
 
 # ─── AWS ─────────────────────────────────────
 boto3==1.34.101
 botocore==1.34.101
 
 # ─── Auth ────────────────────────────────────
-python-jose[cryptography]==3.3.0
+# PyJWT replaces python-jose: jose depends on ecdsa, which has an advisory with
+# no fixed release.
+PyJWT[crypto]==2.15.1
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.9
+python-multipart==0.0.34
 
 # ─── Notifications ───────────────────────────
-aiosmtplib==3.0.1
 httpx==0.27.0
 
 # ─── Observability ───────────────────────────
 prometheus_client==0.20.0
 
 # ─── ETL / Remediation ───────────────────────
-pyspark==3.5.1
-jinja2==3.1.4
-
-# ─── ML / Training ───────────────────────────
-torch==2.3.0
-transformers==4.41.0
-mlflow==2.13.0
-scikit-learn==1.4.2
-faker==24.9.0
+pyspark==3.5.9
+jinja2==3.1.6
 
 # ─── Utilities ───────────────────────────────
-python-dotenv==1.0.1
+python-dotenv==1.2.4
 structlog==24.1.0

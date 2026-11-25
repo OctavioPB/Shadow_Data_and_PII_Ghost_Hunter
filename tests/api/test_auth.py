@@ -16,7 +16,6 @@ from api.auth import get_current_user
 from api.db import get_db
 from api.main import app
 
-
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 
@@ -85,9 +84,7 @@ async def test_me_returns_user_info(client: AsyncClient):
     )
     token = token_resp.json()["access_token"]
 
-    resp = await client.get(
-        "/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"}
-    )
+    resp = await client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     body = resp.json()
     assert body["email"] == "dpo@company.com"

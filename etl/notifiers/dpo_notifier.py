@@ -13,7 +13,6 @@ Privacy:
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import smtplib
@@ -58,6 +57,7 @@ class NotificationContext:
 
 # ─── Rendering ────────────────────────────────────────────────────────────────
 
+
 def _render_html_email(ctx: NotificationContext) -> str:
     tpl = _jinja_env.get_template("dpo_email.html.j2")
     return tpl.render(**ctx.__dict__)
@@ -101,6 +101,7 @@ def _render_slack_message(ctx: NotificationContext) -> dict:
 
 # ─── Delivery with retry ──────────────────────────────────────────────────────
 
+
 def _with_retry(fn, *args, max_retries: int = _MAX_RETRIES, **kwargs) -> tuple[bool, str]:
     """
     Call *fn(*args, **kwargs)* up to *max_retries* times.
@@ -115,8 +116,13 @@ def _with_retry(fn, *args, max_retries: int = _MAX_RETRIES, **kwargs) -> tuple[b
             last_error = str(exc)
             if attempt < max_retries:
                 delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
-                log.warning("Delivery attempt %d/%d failed: %s — retrying in %.1fs",
-                            attempt, max_retries, exc, delay)
+                log.warning(
+                    "Delivery attempt %d/%d failed: %s — retrying in %.1fs",
+                    attempt,
+                    max_retries,
+                    exc,
+                    delay,
+                )
                 time.sleep(delay)
             else:
                 log.error("Delivery failed after %d attempts: %s", max_retries, exc)
@@ -132,11 +138,20 @@ def _send_email(
 ) -> None:
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = "pii-hunter@noreply.internal"
+    msg["From"] = os.environ.get("NOTIFICATION_FROM_EMAIL", "pii-hunter@noreply.internal")
     msg["To"] = recipient
     msg.set_content("PII Alert — please view this email in an HTML-capable client.")
     msg.add_alternative(html_body, subtype="html")
     with smtplib.SMTP(smtp_host, smtp_port, timeout=15) as smtp:
+        # Upgrade to TLS when offered (port 587 submission): the alert reveals
+        # which tables hold PII, so it should not cross the network in clear.
+        smtp.ehlo()
+        if smtp.has_extn("starttls"):
+            smtp.starttls()
+            smtp.ehlo()
+        user = os.environ.get("SMTP_USER", "")
+        if user:
+            smtp.login(user, os.environ.get("SMTP_PASSWORD", ""))
         smtp.send_message(msg)
 
 
@@ -148,6 +163,7 @@ def _send_slack(webhook_url: str, payload: dict) -> None:
 
 
 # ─── DB persistence ───────────────────────────────────────────────────────────
+
 
 def _record_notification(
     engine,
@@ -186,6 +202,7 @@ def _record_notification(
 
 # ─── Public interface ─────────────────────────────────────────────────────────
 
+
 def send_dpo_notifications(
     ctx: NotificationContext,
     database_url: str,
@@ -211,8 +228,14 @@ def send_dpo_notifications(
         )
         status = "sent" if success else "failed"
         _record_notification(
-            engine, "email", dpo_email, subject, ctx.table_id,
-            status, _MAX_RETRIES if not success else 1, error,
+            engine,
+            "email",
+            dpo_email,
+            subject,
+            ctx.table_id,
+            status,
+            _MAX_RETRIES if not success else 1,
+            error,
         )
         results["email"] = {"status": status, "recipient": dpo_email}
         log.info("Email notification %s to %s", status, dpo_email)
@@ -222,11 +245,20 @@ def send_dpo_notifications(
         slack_payload = _render_slack_message(ctx)
         success, error = _with_retry(_send_slack, slack_webhook_url, slack_payload)
         status = "sent" if success else "failed"
+        # Never persist the webhook URL: its path *is* the credential, and the
+        # first 64 chars already include part of the secret token.
         _record_notification(
-            engine, "slack", slack_webhook_url[:64], subject, ctx.table_id,
-            status, _MAX_RETRIES if not success else 1, error,
+            engine,
+            "slack",
+            "slack-webhook",
+            subject,
+            ctx.table_id,
+            status,
+            _MAX_RETRIES if not success else 1,
+            error,
         )
         results["slack"] = {"status": status}
         log.info("Slack notification %s", status)
 
+    engine.dispose()
     return results

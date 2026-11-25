@@ -2,10 +2,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from scanner.schemas.events import DataSourceType, FileFormat, PIICandidateEvent
-
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -31,22 +28,14 @@ def make_producer(settings=None):
 
 def test_avro_schema_file_exists():
     schema_path = (
-        Path(__file__).parent.parent.parent
-        / "scanner"
-        / "schemas"
-        / "avro"
-        / "pii_candidate.avsc"
+        Path(__file__).parent.parent.parent / "scanner" / "schemas" / "avro" / "pii_candidate.avsc"
     )
     assert schema_path.exists(), "Avro schema file is missing"
 
 
 def test_avro_schema_is_valid_json():
     schema_path = (
-        Path(__file__).parent.parent.parent
-        / "scanner"
-        / "schemas"
-        / "avro"
-        / "pii_candidate.avsc"
+        Path(__file__).parent.parent.parent / "scanner" / "schemas" / "avro" / "pii_candidate.avsc"
     )
     schema = json.loads(schema_path.read_text())
     assert schema["type"] == "record"

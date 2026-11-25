@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuthStore } from './store/authStore';
 import { useLogin } from './hooks/useAuth';
 import { useDemoSeed } from './hooks/useDemo';
@@ -82,11 +82,11 @@ function Eyebrow({ children, light = false }: { children: React.ReactNode; light
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { bg: string; color: string; dot: string; label: string }> = {
-    flagged:    { bg: '#FDEAEA', color: '#7A1020', dot: '#E03448', label: 'Flagged' },
-    quarantined:{ bg: '#FEF0E6', color: '#7A3800', dot: '#F07020', label: 'Quarantined' },
+    flagged: { bg: '#FDEAEA', color: '#7A1020', dot: '#E03448', label: 'Flagged' },
+    quarantined: { bg: '#FEF0E6', color: '#7A3800', dot: '#F07020', label: 'Quarantined' },
     remediated: { bg: '#E0F7EF', color: '#0D5C3A', dot: '#27B97C', label: 'Remediated' },
     classified: { bg: '#E0EAF4', color: '#001F4D', dot: '#003366', label: 'Classified' },
-    clean:      { bg: '#E0F7EF', color: '#0D5C3A', dot: '#27B97C', label: 'Clean' },
+    clean: { bg: '#E0F7EF', color: '#0D5C3A', dot: '#27B97C', label: 'Clean' },
   };
   const s = map[status] ?? map['classified'];
   return (
@@ -542,13 +542,7 @@ function paginationBtn(disabled: boolean): React.CSSProperties {
 
 // ─── Nav ─────────────────────────────────────────────────────────────────────
 
-function Nav({
-  page,
-  setPage,
-}: {
-  page: Page;
-  setPage: (p: Page) => void;
-}) {
+function Nav({ page, setPage }: { page: Page; setPage: (p: Page) => void }) {
   const { user, logout } = useAuthStore();
   const navLink: React.CSSProperties = {
     background: 'none',
@@ -793,7 +787,10 @@ function LoginPage() {
             Sign <em style={{ fontStyle: 'italic', color: 'var(--gold)' }}>in</em>
           </h2>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <form
+            onSubmit={handleSubmit}
+            style={{ display: 'flex', flexDirection: 'column', gap: 16 }}
+          >
             <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span
                 style={{
@@ -1010,9 +1007,19 @@ const STATUSES = [
   { value: 'remediated', label: 'Remediated' },
 ];
 
-function DashboardPage({ onTableClick }: { onTableClick: (id: string) => void }) {
-  const [filters, setFilters] = useState<RiskFilters>({ page: 1, size: 20 });
-  const [source, setSource] = useState('');
+function DashboardPage({
+  onTableClick,
+  initialSource = '',
+}: {
+  onTableClick: (id: string) => void;
+  initialSource?: string;
+}) {
+  const [filters, setFilters] = useState<RiskFilters>({
+    page: 1,
+    size: 20,
+    source: initialSource || undefined,
+  });
+  const [source, setSource] = useState(initialSource);
   const [category, setCategory] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
@@ -1097,9 +1104,24 @@ function DashboardPage({ onTableClick }: { onTableClick: (id: string) => void })
             boxShadow: '0 1px 4px rgba(0,51,102,0.06)',
           }}
         >
-          <FilterInput label="Data Source" value={source} onChange={setSource} placeholder="Search source…" />
-          <FilterSelect label="PII Category" value={category} onChange={setCategory} options={PII_CATEGORIES} />
-          <FilterSelect label="Status" value={statusFilter} onChange={setStatusFilter} options={STATUSES} />
+          <FilterInput
+            label="Data Source"
+            value={source}
+            onChange={setSource}
+            placeholder="Search source…"
+          />
+          <FilterSelect
+            label="PII Category"
+            value={category}
+            onChange={setCategory}
+            options={PII_CATEGORIES}
+          />
+          <FilterSelect
+            label="Status"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            options={STATUSES}
+          />
           <button
             onClick={applyFilters}
             style={{
@@ -1130,7 +1152,17 @@ function DashboardPage({ onTableClick }: { onTableClick: (id: string) => void })
           }}
         >
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <TableHead cols={['Table ID', 'Data Source', 'PII Categories', 'Max Confidence', 'Columns', 'Status', 'Last Scanned']} />
+            <TableHead
+              cols={[
+                'Table ID',
+                'Data Source',
+                'PII Categories',
+                'Max Confidence',
+                'Columns',
+                'Status',
+                'Last Scanned',
+              ]}
+            />
             <tbody>
               {risksLoading ? (
                 Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} cols={7} />)
@@ -1199,7 +1231,14 @@ function DashboardPage({ onTableClick }: { onTableClick: (id: string) => void })
                       <ConfidenceBar value={r.max_confidence} />
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'center' }}>
-                      <span style={{ fontFamily: 'var(--fb)', fontSize: 13, fontWeight: 600, color: 'var(--dark)' }}>
+                      <span
+                        style={{
+                          fontFamily: 'var(--fb)',
+                          fontSize: 13,
+                          fontWeight: 600,
+                          color: 'var(--dark)',
+                        }}
+                      >
                         {r.flagged_column_count}
                       </span>
                     </td>
@@ -1231,7 +1270,10 @@ function DashboardPage({ onTableClick }: { onTableClick: (id: string) => void })
   );
 }
 
-const tdStyle: React.CSSProperties = { padding: '12px 16px', borderBottom: '1px solid var(--primary-10)' };
+const tdStyle: React.CSSProperties = {
+  padding: '12px 16px',
+  borderBottom: '1px solid var(--primary-10)',
+};
 
 // ─── PII Report page ──────────────────────────────────────────────────────────
 
@@ -1247,13 +1289,18 @@ function PIIReportPage({
   const { data: report, isLoading, error } = usePIIReport(tableId);
   const remediate = useRemediate(tableId);
   const token = useAuthStore((s) => s.token);
-  const API = (import.meta as unknown as { env: Record<string,string> }).env?.VITE_API_URL ?? 'http://localhost:8000';
+  const API =
+    (import.meta as unknown as { env: Record<string, string> }).env?.VITE_API_URL ??
+    'http://localhost:8000';
 
   const [modal, setModal] = useState<{ open: boolean; action: RemediateRequest['action'] | null }>({
     open: false,
     action: null,
   });
-  const [lineage, setLineage] = useState<{ parents: LineageNode[]; children: LineageNode[] } | null>(null);
+  const [lineage, setLineage] = useState<{
+    parents: LineageNode[];
+    children: LineageNode[];
+  } | null>(null);
   const [lineageLoading, setLineageLoading] = useState(false);
 
   const canRemediate = userRole === 'dpo' || userRole === 'admin';
@@ -1287,7 +1334,7 @@ function PIIReportPage({
     if (!modal.action) return;
     remediate.mutate(
       { action: modal.action },
-      { onSuccess: () => setModal({ open: false, action: null }) },
+      { onSuccess: () => setModal({ open: false, action: null }) }
     );
   };
 
@@ -1404,7 +1451,9 @@ function PIIReportPage({
                   textTransform: 'capitalize',
                 }}
               >
-                {action === 'false_positive' ? 'Mark False Positive' : `${action.charAt(0).toUpperCase() + action.slice(1)} Now`}
+                {action === 'false_positive'
+                  ? 'Mark False Positive'
+                  : `${action.charAt(0).toUpperCase() + action.slice(1)} Now`}
               </button>
             ))}
           </div>
@@ -1522,10 +1571,24 @@ function PIIReportPage({
             padding: '28px 32px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 20,
+            }}
+          >
             <div>
               <Eyebrow>F-06 · Data Lineage</Eyebrow>
-              <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: 'var(--dark)' }}>
+              <div
+                style={{
+                  fontFamily: "'Fraunces', Georgia, serif",
+                  fontSize: 20,
+                  fontWeight: 300,
+                  color: 'var(--dark)',
+                }}
+              >
                 Table Lineage Map
               </div>
             </div>
@@ -1534,9 +1597,16 @@ function PIIReportPage({
                 onClick={lineage ? loadLineage : inferLineage}
                 disabled={lineageLoading}
                 style={{
-                  padding: '8px 18px', borderRadius: 8, border: '1.5px solid var(--primary)',
-                  background: 'transparent', color: 'var(--primary)', cursor: 'pointer',
-                  fontFamily: 'var(--fb)', fontSize: 12, fontWeight: 600, letterSpacing: '1px',
+                  padding: '8px 18px',
+                  borderRadius: 8,
+                  border: '1.5px solid var(--primary)',
+                  background: 'transparent',
+                  color: 'var(--primary)',
+                  cursor: 'pointer',
+                  fontFamily: 'var(--fb)',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: '1px',
                   opacity: lineageLoading ? 0.6 : 1,
                 }}
               >
@@ -1546,8 +1616,17 @@ function PIIReportPage({
           </div>
 
           {!lineage && !lineageLoading && (
-            <p style={{ fontFamily: 'var(--fb)', fontSize: 13, color: 'var(--mid)', textAlign: 'center', padding: '24px 0' }}>
-              Click "Infer Lineage" to run the path-heuristic analysis and detect upstream sources and downstream copies.
+            <p
+              style={{
+                fontFamily: 'var(--fb)',
+                fontSize: 13,
+                color: 'var(--mid)',
+                textAlign: 'center',
+                padding: '24px 0',
+              }}
+            >
+              Click "Infer Lineage" to run the path-heuristic analysis and detect upstream sources
+              and downstream copies.
             </p>
           )}
 
@@ -1555,24 +1634,68 @@ function PIIReportPage({
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
               {(['parents', 'children'] as const).map((side) => (
                 <div key={side}>
-                  <div style={{ fontFamily: 'var(--fb)', fontSize: 10, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 12 }}>
+                  <div
+                    style={{
+                      fontFamily: 'var(--fb)',
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: '2px',
+                      textTransform: 'uppercase',
+                      color: 'var(--mid)',
+                      marginBottom: 12,
+                    }}
+                  >
                     {side === 'parents' ? '↑ Upstream sources' : '↓ Downstream copies'}
                   </div>
                   {lineage[side].length === 0 ? (
-                    <div style={{ fontFamily: 'var(--fb)', fontSize: 13, color: 'var(--mid)', fontStyle: 'italic' }}>None detected</div>
+                    <div
+                      style={{
+                        fontFamily: 'var(--fb)',
+                        fontSize: 13,
+                        color: 'var(--mid)',
+                        fontStyle: 'italic',
+                      }}
+                    >
+                      None detected
+                    </div>
                   ) : (
                     lineage[side].map((node) => (
-                      <div key={node.table_id} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '10px 14px', borderRadius: 8, background: 'var(--light)',
-                        marginBottom: 8, gap: 12,
-                      }}>
+                      <div
+                        key={node.table_id}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '10px 14px',
+                          borderRadius: 8,
+                          background: 'var(--light)',
+                          marginBottom: 8,
+                          gap: 12,
+                        }}
+                      >
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--dark)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div
+                            style={{
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              color: 'var(--dark)',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
                             {node.source_name || node.table_id}
                           </div>
-                          <div style={{ fontFamily: 'var(--fb)', fontSize: 10, color: 'var(--mid)', marginTop: 2 }}>
-                            {node.inference_method.replace(/_/g, ' ')} · {Math.round(node.confidence * 100)}% confidence
+                          <div
+                            style={{
+                              fontFamily: 'var(--fb)',
+                              fontSize: 10,
+                              color: 'var(--mid)',
+                              marginTop: 2,
+                            }}
+                          >
+                            {node.inference_method.replace(/_/g, ' ')} ·{' '}
+                            {Math.round(node.confidence * 100)}% confidence
                           </div>
                         </div>
                         <StatusBadge status={node.status} />
@@ -1649,7 +1772,12 @@ function AuditPage() {
             boxShadow: '0 1px 4px rgba(0,51,102,0.06)',
           }}
         >
-          <FilterInput label="Actor" value={actorInput} onChange={setActorInput} placeholder="system, dpo@…" />
+          <FilterInput
+            label="Actor"
+            value={actorInput}
+            onChange={setActorInput}
+            placeholder="system, dpo@…"
+          />
           <FilterSelect
             label="Event Type"
             value={eventTypeInput}
@@ -1675,7 +1803,12 @@ function AuditPage() {
             Apply →
           </button>
           <button
-            onClick={() => exportAuditLog(token, { actor: actorInput || undefined, event_type: eventTypeInput || undefined })}
+            onClick={() =>
+              exportAuditLog(token, {
+                actor: actorInput || undefined,
+                event_type: eventTypeInput || undefined,
+              })
+            }
             style={{
               padding: '8px 20px',
               borderRadius: 6,
@@ -1731,7 +1864,13 @@ function AuditPage() {
                     style={{ background: i % 2 === 0 ? '#fff' : 'var(--primary-10)' }}
                   >
                     <td style={tdStyle}>
-                      <span style={{ fontFamily: 'Courier New, monospace', fontSize: 12, color: 'var(--mid)' }}>
+                      <span
+                        style={{
+                          fontFamily: 'Courier New, monospace',
+                          fontSize: 12,
+                          color: 'var(--mid)',
+                        }}
+                      >
                         {new Date(entry.timestamp).toISOString().replace('T', ' ').slice(0, 19)}
                       </span>
                     </td>
@@ -2103,26 +2242,22 @@ function BusinessView() {
     {
       icon: '⚠',
       title: 'Uncontrolled data copies',
-      body:
-        'Development pipelines, analytics workloads, and backup processes routinely create copies of production tables. These copies accumulate across S3 buckets, Athena catalogs, and data lake partitions without any ownership or lifecycle policy attached to them.',
+      body: 'Development pipelines, analytics workloads, and backup processes routinely create copies of production tables. These copies accumulate across S3 buckets, Athena catalogs, and data lake partitions without any ownership or lifecycle policy attached to them.',
     },
     {
       icon: '🔍',
       title: 'No visibility into PII exposure',
-      body:
-        'Data governance teams have no systematic way to know which tables contain personal data. Manual audits are too slow, require specialist effort, and go stale within days as new datasets arrive.',
+      body: 'Data governance teams have no systematic way to know which tables contain personal data. Manual audits are too slow, require specialist effort, and go stale within days as new datasets arrive.',
     },
     {
       icon: '⚖',
       title: 'Regulatory pressure without tooling',
-      body:
-        'GDPR and LGPD impose deletion, minimization, and audit obligations. Regulators expect organizations to demonstrate control over where personal data lives. Without automated scanning, responding to a Subject Access Request or a regulatory inquiry requires weeks of manual effort.',
+      body: 'GDPR and LGPD impose deletion, minimization, and audit obligations. Regulators expect organizations to demonstrate control over where personal data lives. Without automated scanning, responding to a Subject Access Request or a regulatory inquiry requires weeks of manual effort.',
     },
     {
       icon: '🔔',
       title: 'Late detection, reactive response',
-      body:
-        'When a data breach or a compliance audit surfaces an overlooked dataset, the remediation cycle is costly — legal review, breach notifications, and operational disruption are all avoidable if the data was never retained unmanaged in the first place.',
+      body: 'When a data breach or a compliance audit surfaces an overlooked dataset, the remediation cycle is costly — legal review, breach notifications, and operational disruption are all avoidable if the data was never retained unmanaged in the first place.',
     },
   ];
 
@@ -2166,10 +2301,17 @@ function BusinessView() {
         <Eyebrow>Core Value Proposition</Eyebrow>
         <h2 style={h2}>What the platform does</h2>
         <p style={p}>
-          PII Ghost-Hunter is a continuous data governance platform that automatically discovers, classifies, and remediates unmanaged copies of sensitive data across cloud data infrastructure. It connects to the event stream of a data lake, identifies every new dataset that arrives, samples its contents against a trained PII classifier, and initiates a remediation workflow when personal data is found — without requiring any manual triage.
+          PII Ghost-Hunter is a continuous data governance platform that automatically discovers,
+          classifies, and remediates unmanaged copies of sensitive data across cloud data
+          infrastructure. It connects to the event stream of a data lake, identifies every new
+          dataset that arrives, samples its contents against a trained PII classifier, and initiates
+          a remediation workflow when personal data is found — without requiring any manual triage.
         </p>
         <p style={p}>
-          The intended audience is mid-to-large organizations operating cloud data platforms under GDPR or LGPD obligations, where the volume of data creation outpaces manual governance capacity. The platform is not a one-time audit tool; it runs continuously and generates a living compliance record as data moves through the organization.
+          The intended audience is mid-to-large organizations operating cloud data platforms under
+          GDPR or LGPD obligations, where the volume of data creation outpaces manual governance
+          capacity. The platform is not a one-time audit tool; it runs continuously and generates a
+          living compliance record as data moves through the organization.
         </p>
 
         {/* Flow diagram */}
@@ -2250,8 +2392,7 @@ function BusinessView() {
                 gridTemplateColumns: '220px 1fr',
                 gap: 24,
                 padding: '18px 0',
-                borderBottom:
-                  i < advantages.length - 1 ? '1px solid rgba(0,51,102,0.07)' : 'none',
+                borderBottom: i < advantages.length - 1 ? '1px solid rgba(0,51,102,0.07)' : 'none',
               }}
             >
               <div
@@ -2284,10 +2425,26 @@ function BusinessView() {
           }}
         >
           {[
-            { metric: 'Time to detection', before: 'Weeks (manual audit)', after: 'Hours (automated scan)' },
-            { metric: 'DPO triage effort', before: 'Full dataset review', after: 'Structured notification + one-click action' },
-            { metric: 'Audit trail completeness', before: 'Inconsistent, manual', after: 'Append-only, query-ready' },
-            { metric: 'Regulatory response time', before: 'Days–weeks', after: 'Immediate export from audit log' },
+            {
+              metric: 'Time to detection',
+              before: 'Weeks (manual audit)',
+              after: 'Hours (automated scan)',
+            },
+            {
+              metric: 'DPO triage effort',
+              before: 'Full dataset review',
+              after: 'Structured notification + one-click action',
+            },
+            {
+              metric: 'Audit trail completeness',
+              before: 'Inconsistent, manual',
+              after: 'Append-only, query-ready',
+            },
+            {
+              metric: 'Regulatory response time',
+              before: 'Days–weeks',
+              after: 'Immediate export from audit log',
+            },
           ].map((row) => (
             <div
               key={row.metric}
@@ -2344,12 +2501,34 @@ function BusinessView() {
         <div style={{ ...h3, marginTop: 32 }}>Who uses it</div>
         <ul style={{ listStyle: 'none', paddingLeft: 0 }}>
           {[
-            ['Data Protection Officer (DPO)', 'Receives prioritized notifications, takes remediation actions, exports audit evidence for regulators.'],
-            ['Data Platform / Engineering team', 'Monitors scanner health, manages model versions, reviews false positives to improve classifier accuracy.'],
-            ['Security & Compliance Auditor', 'Queries the immutable audit log for evidence of control effectiveness, exports CSV for regulatory submissions.'],
-            ['Engineering Leadership', 'Tracks overall compliance posture via KPI dashboard — percentage remediated, open findings, trend over time.'],
+            [
+              'Data Protection Officer (DPO)',
+              'Receives prioritized notifications, takes remediation actions, exports audit evidence for regulators.',
+            ],
+            [
+              'Data Platform / Engineering team',
+              'Monitors scanner health, manages model versions, reviews false positives to improve classifier accuracy.',
+            ],
+            [
+              'Security & Compliance Auditor',
+              'Queries the immutable audit log for evidence of control effectiveness, exports CSV for regulatory submissions.',
+            ],
+            [
+              'Engineering Leadership',
+              'Tracks overall compliance posture via KPI dashboard — percentage remediated, open findings, trend over time.',
+            ],
           ].map(([role, desc]) => (
-            <li key={role} style={{ ...li, display: 'grid', gridTemplateColumns: '220px 1fr', gap: 24, paddingLeft: 0, marginBottom: 10 }}>
+            <li
+              key={role}
+              style={{
+                ...li,
+                display: 'grid',
+                gridTemplateColumns: '220px 1fr',
+                gap: 24,
+                paddingLeft: 0,
+                marginBottom: 10,
+              }}
+            >
               <span style={{ fontWeight: 600, color: 'var(--primary)', fontSize: 13 }}>{role}</span>
               <span>{desc}</span>
             </li>
@@ -2423,7 +2602,11 @@ function BusinessFlowDiagram() {
       {arrow}
       {box('Confidence Gate', 'Score ≥ 0.85 triggers automated action', '#E03448')}
       {arrow}
-      {box('Remediation', 'Anonymize, quarantine, or mark false positive — DPO notified', '#27B97C')}
+      {box(
+        'Remediation',
+        'Anonymize, quarantine, or mark false positive — DPO notified',
+        '#27B97C'
+      )}
     </div>
   );
 }
@@ -2454,15 +2637,74 @@ function EngineeringView() {
   };
 
   const stackRows: { layer: string; components: string[] }[] = [
-    { layer: 'Presentation', components: ['React 18 + TypeScript', 'Vite', 'TanStack Query', 'CSS-in-JS (inline styles)'] },
-    { layer: 'API Gateway', components: ['FastAPI (Python 3.11)', 'SQLAlchemy 2.0 async', 'Pydantic v2', 'JWT / OAuth2 RBAC'] },
-    { layer: 'Event Streaming', components: ['Apache Kafka 7.5', 'Confluent Schema Registry', 'Avro schemas', 'Dead-letter topic'] },
-    { layer: 'Orchestration', components: ['Apache Airflow 2.8.1', '4 DAGs (patrol, sampling, remediation, expiry)', 'Custom PIIClassifierOperator'] },
-    { layer: 'ML / Inference', components: ['DistilBERT-base-multilingual-cased', 'HuggingFace Transformers', 'PyTorch', 'MLflow (registry + tracking)'] },
-    { layer: 'Data Processing', components: ['PySpark 3.5 (anonymization)', 'AWS Athena / Glue (sampling)', 'boto3 (S3 ops)'] },
-    { layer: 'Storage', components: ['PostgreSQL 15 (primary state)', 'Redis 7 (caching)', 'S3 (staging, quarantine, model artifacts)'] },
-    { layer: 'Observability', components: ['Prometheus (metrics)', 'Grafana (dashboards)', 'Structlog (JSON logs — no PII values)'] },
-    { layer: 'Infrastructure', components: ['Docker Compose (local dev)', 'Terraform (AWS provisioning)', 'Helm + Kubernetes (production)', 'GitHub Actions (CI/CD)'] },
+    {
+      layer: 'Presentation',
+      components: ['React 18 + TypeScript', 'Vite', 'TanStack Query', 'CSS-in-JS (inline styles)'],
+    },
+    {
+      layer: 'API Gateway',
+      components: [
+        'FastAPI (Python 3.11)',
+        'SQLAlchemy 2.0 async',
+        'Pydantic v2',
+        'JWT / OAuth2 RBAC',
+      ],
+    },
+    {
+      layer: 'Event Streaming',
+      components: [
+        'Apache Kafka 7.5',
+        'Confluent Schema Registry',
+        'Avro schemas',
+        'Dead-letter topic',
+      ],
+    },
+    {
+      layer: 'Orchestration',
+      components: [
+        'Apache Airflow 2.8.1',
+        '4 DAGs (patrol, sampling, remediation, expiry)',
+        'Custom PIIClassifierOperator',
+      ],
+    },
+    {
+      layer: 'ML / Inference',
+      components: [
+        'DistilBERT-base-multilingual-cased',
+        'HuggingFace Transformers',
+        'PyTorch',
+        'MLflow (registry + tracking)',
+      ],
+    },
+    {
+      layer: 'Data Processing',
+      components: ['PySpark 3.5 (anonymization)', 'AWS Athena / Glue (sampling)', 'boto3 (S3 ops)'],
+    },
+    {
+      layer: 'Storage',
+      components: [
+        'PostgreSQL 15 (primary state)',
+        'Redis 7 (caching)',
+        'S3 (staging, quarantine, model artifacts)',
+      ],
+    },
+    {
+      layer: 'Observability',
+      components: [
+        'Prometheus (metrics)',
+        'Grafana (dashboards)',
+        'Structlog (JSON logs — no PII values)',
+      ],
+    },
+    {
+      layer: 'Infrastructure',
+      components: [
+        'Docker Compose (local dev)',
+        'Terraform (AWS provisioning)',
+        'Helm + Kubernetes (production)',
+        'GitHub Actions (CI/CD)',
+      ],
+    },
   ];
 
   const layerColors: Record<string, string> = {
@@ -2484,7 +2726,11 @@ function EngineeringView() {
     { from: 'classified', to: 'clean', trigger: 'No PII detected' },
     { from: 'flagged', to: 'quarantined', trigger: 'DPO quarantine action or auto-remediation' },
     { from: 'flagged', to: 'remediated', trigger: 'DPO anonymize action' },
-    { from: 'quarantined', to: 'remediated', trigger: 'DPO approves deletion/anonymization after review' },
+    {
+      from: 'quarantined',
+      to: 'remediated',
+      trigger: 'DPO approves deletion/anonymization after review',
+    },
   ];
 
   return (
@@ -2494,7 +2740,9 @@ function EngineeringView() {
         <Eyebrow>System Architecture</Eyebrow>
         <h2 style={h2}>How the system is structured</h2>
         <p style={p}>
-          The platform is composed of five loosely coupled subsystems connected through a Kafka event bus and a shared PostgreSQL state store. Each subsystem can be deployed, scaled, and restarted independently.
+          The platform is composed of five loosely coupled subsystems connected through a Kafka
+          event bus and a shared PostgreSQL state store. Each subsystem can be deployed, scaled, and
+          restarted independently.
         </p>
         <ArchitectureDiagram />
       </div>
@@ -2643,7 +2891,9 @@ function EngineeringView() {
               >
                 {s.title}
               </div>
-              <div style={{ fontFamily: 'var(--fb)', fontSize: 13, color: '#374151', lineHeight: 1.8 }}>
+              <div
+                style={{ fontFamily: 'var(--fb)', fontSize: 13, color: '#374151', lineHeight: 1.8 }}
+              >
                 {s.detail}
               </div>
             </div>
@@ -2656,7 +2906,9 @@ function EngineeringView() {
         <Eyebrow>Data Lifecycle</Eyebrow>
         <h2 style={h2}>Scanner event state machine</h2>
         <p style={{ ...p, marginBottom: 24 }}>
-          Every scanner event moves through a defined set of states. State transitions are recorded in audit_log. The scanner_events table uses a compare-and-swap pattern on status updates to prevent race conditions between concurrent DAG runs.
+          Every scanner event moves through a defined set of states. State transitions are recorded
+          in audit_log. The scanner_events table uses a compare-and-swap pattern on status updates
+          to prevent race conditions between concurrent DAG runs.
         </p>
         <StateMachineDiagram states={stateTransitions} />
       </div>
@@ -2665,22 +2917,50 @@ function EngineeringView() {
       <div style={card}>
         <Eyebrow>Data Model</Eyebrow>
         <h2 style={h2}>Core PostgreSQL tables</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gap: 16,
+          }}
+        >
           {[
             {
               table: 'scanner_events',
-              purpose: 'One record per detected dataset. Tracks lifecycle from ingestion to remediation.',
-              keyFields: ['event_id (PK)', 'source_name', 'data_source_type', 'status', 'owner_email', 'raw_event JSONB'],
+              purpose:
+                'One record per detected dataset. Tracks lifecycle from ingestion to remediation.',
+              keyFields: [
+                'event_id (PK)',
+                'source_name',
+                'data_source_type',
+                'status',
+                'owner_email',
+                'raw_event JSONB',
+              ],
             },
             {
               table: 'column_samples',
-              purpose: 'Metadata for each sampled column — points to S3 Parquet for the sample data.',
-              keyFields: ['table_id (FK)', 'column_name', 'sample_s3_path', 'status', 'sample_count'],
+              purpose:
+                'Metadata for each sampled column — points to S3 Parquet for the sample data.',
+              keyFields: [
+                'table_id (FK)',
+                'column_name',
+                'sample_s3_path',
+                'status',
+                'sample_count',
+              ],
             },
             {
               table: 'pii_findings',
               purpose: 'One record per column per table. Stores the ML classification result.',
-              keyFields: ['table_id (FK)', 'column_name', 'pii_category', 'confidence', 'flagged', 'status'],
+              keyFields: [
+                'table_id (FK)',
+                'column_name',
+                'pii_category',
+                'confidence',
+                'flagged',
+                'status',
+              ],
             },
             {
               table: 'audit_log',
@@ -2690,11 +2970,18 @@ function EngineeringView() {
             {
               table: 'quarantine_manifest',
               purpose: 'Tracks every quarantine action — source path, destination, review status.',
-              keyFields: ['table_id (FK)', 'source_s3_path', 'quarantine_s3_path', 'flagged_categories', 'reviewed_by'],
+              keyFields: [
+                'table_id (FK)',
+                'source_s3_path',
+                'quarantine_s3_path',
+                'flagged_categories',
+                'reviewed_by',
+              ],
             },
             {
               table: 'model_registry',
-              purpose: 'Versioned ML model catalog. Production inference uses the single approved model.',
+              purpose:
+                'Versioned ML model catalog. Production inference uses the single approved model.',
               keyFields: ['version', 's3_uri', 'macro_f1', 'weighted_f1', 'accuracy', 'status'],
             },
           ].map((t) => (
@@ -2828,7 +3115,9 @@ function EngineeringView() {
               </span>
               {d.decision}
             </div>
-            <div style={{ fontFamily: 'var(--fb)', fontSize: 13, color: '#374151', lineHeight: 1.8 }}>
+            <div
+              style={{ fontFamily: 'var(--fb)', fontSize: 13, color: '#374151', lineHeight: 1.8 }}
+            >
               {d.rationale}
             </div>
           </div>
@@ -2858,7 +3147,13 @@ function ArchitectureDiagram() {
       }}
     >
       <div
-        style={{ fontFamily: 'var(--fb)', fontSize: 12, fontWeight: 600, color: textColor, marginBottom: 4 }}
+        style={{
+          fontFamily: 'var(--fb)',
+          fontSize: 12,
+          fontWeight: 600,
+          color: textColor,
+          marginBottom: 4,
+        }}
       >
         {label}
       </div>
@@ -2878,7 +3173,9 @@ function ArchitectureDiagram() {
         gap: 2,
       }}
     >
-      <div style={{ fontFamily: 'var(--fb)', fontSize: 18, color: 'var(--mid)', lineHeight: 1 }}>→</div>
+      <div style={{ fontFamily: 'var(--fb)', fontSize: 18, color: 'var(--mid)', lineHeight: 1 }}>
+        →
+      </div>
       {label && (
         <div
           style={{
@@ -2952,7 +3249,12 @@ function ArchitectureDiagram() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 0, flexWrap: 'wrap', rowGap: 8 }}>
         {node('FastAPI', 'REST API, JWT RBAC', '#E0EAF4', '#336699')}
         {arrow('serve')}
-        {node('React Dashboard', 'Risk Inventory, PII Report, Audit, Sources', '#E0EAF4', '#003366')}
+        {node(
+          'React Dashboard',
+          'Risk Inventory, PII Report, Audit, Sources',
+          '#E0EAF4',
+          '#003366'
+        )}
       </div>
     </div>
   );
@@ -2964,13 +3266,13 @@ function StateMachineDiagram({
   states: { from: string; to: string; trigger: string }[];
 }) {
   const statusColors: Record<string, { bg: string; border: string; text: string }> = {
-    pending:      { bg: '#E0EAF4', border: '#336699', text: '#003366' },
-    queued:       { bg: '#EDE8F7', border: '#7C5CBF', text: '#4A2F8A' },
-    classified:   { bg: '#FFF3CD', border: '#C8982A', text: '#7A5800' },
-    flagged:      { bg: '#FDEAEA', border: '#E03448', text: '#7A1020' },
-    clean:        { bg: '#E0F7EF', border: '#27B97C', text: '#0D5C3A' },
-    quarantined:  { bg: '#FEF0E6', border: '#F07020', text: '#7A3800' },
-    remediated:   { bg: '#E0F7EF', border: '#27B97C', text: '#0D5C3A' },
+    pending: { bg: '#E0EAF4', border: '#336699', text: '#003366' },
+    queued: { bg: '#EDE8F7', border: '#7C5CBF', text: '#4A2F8A' },
+    classified: { bg: '#FFF3CD', border: '#C8982A', text: '#7A5800' },
+    flagged: { bg: '#FDEAEA', border: '#E03448', text: '#7A1020' },
+    clean: { bg: '#E0F7EF', border: '#27B97C', text: '#0D5C3A' },
+    quarantined: { bg: '#FEF0E6', border: '#F07020', text: '#7A3800' },
+    remediated: { bg: '#E0F7EF', border: '#27B97C', text: '#0D5C3A' },
   };
 
   const stateBox = (status: string) => {
@@ -3013,7 +3315,9 @@ function StateMachineDiagram({
           {stateBox(t.from)}
           <span style={{ color: 'var(--mid)', fontSize: 16, textAlign: 'center' }}>→</span>
           {stateBox(t.to)}
-          <span style={{ fontFamily: 'var(--fb)', fontSize: 12, color: '#374151' }}>{t.trigger}</span>
+          <span style={{ fontFamily: 'var(--fb)', fontSize: 12, color: '#374151' }}>
+            {t.trigger}
+          </span>
         </div>
       ))}
     </div>
@@ -3055,7 +3359,9 @@ interface TrendPoint {
 function CompliancePage() {
   const [tab, setTab] = useState<'ropa' | 'dsar' | 'intelligence'>('ropa');
   const token = useAuthStore((s) => s.token);
-  const API = (import.meta as unknown as { env: Record<string,string> }).env?.VITE_API_URL ?? 'http://localhost:8000';
+  const API =
+    (import.meta as unknown as { env: Record<string, string> }).env?.VITE_API_URL ??
+    'http://localhost:8000';
 
   const tabBar: React.CSSProperties = {
     display: 'flex',
@@ -3142,7 +3448,10 @@ function RopaTab({ token, API }: { token: string | null; API: string }) {
     await load();
   };
 
-  useState(() => { load(); });
+  useEffect(() => {
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load on mount / token change
+  }, [token, API]);
 
   const card: React.CSSProperties = {
     background: '#fff',
@@ -3155,24 +3464,45 @@ function RopaTab({ token, API }: { token: string | null; API: string }) {
 
   return (
     <>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 24,
+        }}
+      >
         <div>
           <Eyebrow>GDPR Art. 30</Eyebrow>
-          <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 300, color: 'var(--dark)' }}>
+          <h2
+            style={{
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontSize: 26,
+              fontWeight: 300,
+              color: 'var(--dark)',
+            }}
+          >
             Records of Processing Activities
           </h2>
           {incomplete > 0 && (
             <p style={{ fontFamily: 'var(--fb)', fontSize: 12, color: '#E03448', marginTop: 6 }}>
-              {incomplete} {incomplete === 1 ? 'entry requires' : 'entries require'} purpose annotation
+              {incomplete} {incomplete === 1 ? 'entry requires' : 'entries require'} purpose
+              annotation
             </p>
           )}
         </div>
         <a
           href={`${API}/api/v1/compliance/ropa/export.csv`}
           style={{
-            padding: '10px 20px', borderRadius: 8, background: 'var(--primary)',
-            color: '#fff', fontFamily: 'var(--fb)', fontSize: 12, fontWeight: 600,
-            letterSpacing: '1px', textDecoration: 'none',
+            padding: '10px 20px',
+            borderRadius: 8,
+            background: 'var(--primary)',
+            color: '#fff',
+            fontFamily: 'var(--fb)',
+            fontSize: 12,
+            fontWeight: 600,
+            letterSpacing: '1px',
+            textDecoration: 'none',
           }}
         >
           Export CSV
@@ -3180,17 +3510,40 @@ function RopaTab({ token, API }: { token: string | null; API: string }) {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 40, fontFamily: 'var(--fb)', color: 'var(--mid)' }}>Loading ROPA…</div>
+        <div
+          style={{ textAlign: 'center', padding: 40, fontFamily: 'var(--fb)', color: 'var(--mid)' }}
+        >
+          Loading ROPA…
+        </div>
       ) : (
         <div style={card}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--light)' }}>
-                {['Data Source', 'Type', 'PII Categories', 'Status', 'Purpose', 'Legal Basis', ''].map((h) => (
-                  <th key={h} style={{
-                    fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px',
-                    textTransform: 'uppercase', color: 'var(--mid)', padding: '12px 16px', textAlign: 'left',
-                  }}>{h}</th>
+                {[
+                  'Data Source',
+                  'Type',
+                  'PII Categories',
+                  'Status',
+                  'Purpose',
+                  'Legal Basis',
+                  '',
+                ].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      fontFamily: 'var(--fb)',
+                      fontSize: 9,
+                      fontWeight: 600,
+                      letterSpacing: '2px',
+                      textTransform: 'uppercase',
+                      color: 'var(--mid)',
+                      padding: '12px 16px',
+                      textAlign: 'left',
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -3198,37 +3551,92 @@ function RopaTab({ token, API }: { token: string | null; API: string }) {
               {entries.map((e) => (
                 <>
                   <tr key={e.source_name} style={{ borderTop: '1px solid rgba(0,51,102,0.07)' }}>
-                    <td style={{ padding: '14px 16px', fontFamily: 'monospace', fontSize: 12, color: 'var(--dark)' }}>
+                    <td
+                      style={{
+                        padding: '14px 16px',
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        color: 'var(--dark)',
+                      }}
+                    >
                       {e.source_name}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
-                      <span style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      <span
+                        style={{
+                          fontFamily: 'var(--fb)',
+                          fontSize: 11,
+                          color: 'var(--mid)',
+                          textTransform: 'uppercase',
+                          letterSpacing: '1px',
+                        }}
+                      >
                         {e.data_source_type}
                       </span>
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                         {e.pii_categories.map((c) => (
-                          <span key={c} style={{ background: 'var(--primary-10)', color: 'var(--primary)', borderRadius: 4, padding: '2px 7px', fontSize: 10, fontFamily: 'var(--fb)', fontWeight: 600 }}>
+                          <span
+                            key={c}
+                            style={{
+                              background: 'var(--primary-10)',
+                              color: 'var(--primary)',
+                              borderRadius: 4,
+                              padding: '2px 7px',
+                              fontSize: 10,
+                              fontFamily: 'var(--fb)',
+                              fontWeight: 600,
+                            }}
+                          >
                             {c}
                           </span>
                         ))}
                       </div>
                     </td>
-                    <td style={{ padding: '14px 16px' }}><StatusBadge status={e.current_status} /></td>
-                    <td style={{ padding: '14px 16px', fontFamily: 'var(--fb)', fontSize: 12, color: e.purpose ? 'var(--dark)' : '#E03448' }}>
+                    <td style={{ padding: '14px 16px' }}>
+                      <StatusBadge status={e.current_status} />
+                    </td>
+                    <td
+                      style={{
+                        padding: '14px 16px',
+                        fontFamily: 'var(--fb)',
+                        fontSize: 12,
+                        color: e.purpose ? 'var(--dark)' : '#E03448',
+                      }}
+                    >
                       {e.purpose ?? '⚠ Not documented'}
                     </td>
-                    <td style={{ padding: '14px 16px', fontFamily: 'var(--fb)', fontSize: 12, color: e.legal_basis ? 'var(--dark)' : 'var(--mid)' }}>
+                    <td
+                      style={{
+                        padding: '14px 16px',
+                        fontFamily: 'var(--fb)',
+                        fontSize: 12,
+                        color: e.legal_basis ? 'var(--dark)' : 'var(--mid)',
+                      }}
+                    >
                       {e.legal_basis ?? '—'}
                     </td>
                     <td style={{ padding: '14px 16px' }}>
                       <button
                         onClick={() => {
                           setAnnotating(annotating === e.source_name ? null : e.source_name);
-                          setForm({ purpose: e.purpose ?? '', legal_basis: e.legal_basis ?? '', cross_border_transfer: e.cross_border_transfer });
+                          setForm({
+                            purpose: e.purpose ?? '',
+                            legal_basis: e.legal_basis ?? '',
+                            cross_border_transfer: e.cross_border_transfer,
+                          });
                         }}
-                        style={{ background: 'none', border: '1px solid var(--primary-30)', borderRadius: 6, padding: '4px 12px', fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--primary)', cursor: 'pointer' }}
+                        style={{
+                          background: 'none',
+                          border: '1px solid var(--primary-30)',
+                          borderRadius: 6,
+                          padding: '4px 12px',
+                          fontFamily: 'var(--fb)',
+                          fontSize: 11,
+                          color: 'var(--primary)',
+                          cursor: 'pointer',
+                        }}
                       >
                         {annotating === e.source_name ? 'Cancel' : 'Annotate'}
                       </button>
@@ -3236,39 +3644,116 @@ function RopaTab({ token, API }: { token: string | null; API: string }) {
                   </tr>
                   {annotating === e.source_name && (
                     <tr key={`${e.source_name}-form`}>
-                      <td colSpan={7} style={{ background: 'var(--primary-10)', padding: '20px 24px' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto auto', gap: 12, alignItems: 'end' }}>
+                      <td
+                        colSpan={7}
+                        style={{ background: 'var(--primary-10)', padding: '20px 24px' }}
+                      >
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr auto auto',
+                            gap: 12,
+                            alignItems: 'end',
+                          }}
+                        >
                           <div>
-                            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>Processing Purpose</div>
+                            <div
+                              style={{
+                                fontFamily: 'var(--fb)',
+                                fontSize: 9,
+                                fontWeight: 600,
+                                letterSpacing: '2px',
+                                textTransform: 'uppercase',
+                                color: 'var(--mid)',
+                                marginBottom: 6,
+                              }}
+                            >
+                              Processing Purpose
+                            </div>
                             <input
                               value={form.purpose}
                               onChange={(e) => setForm((f) => ({ ...f, purpose: e.target.value }))}
                               placeholder="e.g. Customer analytics, payroll processing"
-                              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--primary-30)', fontFamily: 'var(--fb)', fontSize: 13 }}
+                              style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                borderRadius: 6,
+                                border: '1px solid var(--primary-30)',
+                                fontFamily: 'var(--fb)',
+                                fontSize: 13,
+                              }}
                             />
                           </div>
                           <div>
-                            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>Legal Basis</div>
+                            <div
+                              style={{
+                                fontFamily: 'var(--fb)',
+                                fontSize: 9,
+                                fontWeight: 600,
+                                letterSpacing: '2px',
+                                textTransform: 'uppercase',
+                                color: 'var(--mid)',
+                                marginBottom: 6,
+                              }}
+                            >
+                              Legal Basis
+                            </div>
                             <select
                               value={form.legal_basis}
-                              onChange={(ev) => setForm((f) => ({ ...f, legal_basis: ev.target.value }))}
-                              style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--primary-30)', fontFamily: 'var(--fb)', fontSize: 13 }}
+                              onChange={(ev) =>
+                                setForm((f) => ({ ...f, legal_basis: ev.target.value }))
+                              }
+                              style={{
+                                width: '100%',
+                                padding: '8px 12px',
+                                borderRadius: 6,
+                                border: '1px solid var(--primary-30)',
+                                fontFamily: 'var(--fb)',
+                                fontSize: 13,
+                              }}
                             >
                               <option value="">— Select —</option>
-                              {legalBases.map((lb) => <option key={lb} value={lb}>{lb}</option>)}
+                              {legalBases.map((lb) => (
+                                <option key={lb} value={lb}>
+                                  {lb}
+                                </option>
+                              ))}
                             </select>
                           </div>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontFamily: 'var(--fb)', fontSize: 12, color: 'var(--dark)', paddingBottom: 8, cursor: 'pointer' }}>
+                          <label
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              fontFamily: 'var(--fb)',
+                              fontSize: 12,
+                              color: 'var(--dark)',
+                              paddingBottom: 8,
+                              cursor: 'pointer',
+                            }}
+                          >
                             <input
                               type="checkbox"
                               checked={form.cross_border_transfer}
-                              onChange={(ev) => setForm((f) => ({ ...f, cross_border_transfer: ev.target.checked }))}
+                              onChange={(ev) =>
+                                setForm((f) => ({ ...f, cross_border_transfer: ev.target.checked }))
+                              }
                             />
                             Cross-border transfer
                           </label>
                           <button
                             onClick={() => saveAnnotation(e.source_name)}
-                            style={{ padding: '9px 20px', borderRadius: 8, background: 'var(--primary)', color: '#fff', border: 'none', fontFamily: 'var(--fb)', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                            style={{
+                              padding: '9px 20px',
+                              borderRadius: 8,
+                              background: 'var(--primary)',
+                              color: '#fff',
+                              border: 'none',
+                              fontFamily: 'var(--fb)',
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                            }}
                           >
                             Save
                           </button>
@@ -3292,8 +3777,28 @@ function DsarTab({ token, API }: { token: string | null; API: string }) {
   const [identifierType, setIdentifierType] = useState('email');
   const [identifierValue, setIdentifierValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ search_id: string; tables_matched: number; pii_category_searched: string; matches: { source_name: string; table_id: string; data_source_type: string; estimated_row_count: number; status: string; confidence: number }[] } | null>(null);
-  const [history, setHistory] = useState<{ search_id: string; initiated_by: string; identifier_type: string; tables_matched_count: number; created_at: string }[]>([]);
+  const [result, setResult] = useState<{
+    search_id: string;
+    tables_matched: number;
+    pii_category_searched: string;
+    matches: {
+      source_name: string;
+      table_id: string;
+      data_source_type: string;
+      estimated_row_count: number;
+      status: string;
+      confidence: number;
+    }[];
+  } | null>(null);
+  const [history, setHistory] = useState<
+    {
+      search_id: string;
+      initiated_by: string;
+      identifier_type: string;
+      tables_matched_count: number;
+      created_at: string;
+    }[]
+  >([]);
 
   const loadHistory = async () => {
     const r = await fetch(`${API}/api/v1/dsar/searches`, {
@@ -3305,7 +3810,10 @@ function DsarTab({ token, API }: { token: string | null; API: string }) {
     }
   };
 
-  useState(() => { loadHistory(); });
+  useEffect(() => {
+    void loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load on mount / token change
+  }, [token, API]);
 
   const runSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -3316,7 +3824,10 @@ function DsarTab({ token, API }: { token: string | null; API: string }) {
       const r = await fetch(`${API}/api/v1/dsar/search`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ identifier_type: identifierType, identifier_value: identifierValue }),
+        body: JSON.stringify({
+          identifier_type: identifierType,
+          identifier_value: identifierValue,
+        }),
       });
       if (r.ok) {
         setResult(await r.json());
@@ -3332,22 +3843,69 @@ function DsarTab({ token, API }: { token: string | null; API: string }) {
     <>
       <div style={{ marginBottom: 32 }}>
         <Eyebrow>GDPR Art. 15</Eyebrow>
-        <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 300, color: 'var(--dark)', marginBottom: 8 }}>
+        <h2
+          style={{
+            fontFamily: "'Fraunces', Georgia, serif",
+            fontSize: 26,
+            fontWeight: 300,
+            color: 'var(--dark)',
+            marginBottom: 8,
+          }}
+        >
           Data Subject Search
         </h2>
-        <p style={{ fontFamily: 'var(--fb)', fontSize: 13, color: 'var(--mid)', lineHeight: 1.7, maxWidth: 600 }}>
-          Identify all detected data assets containing records for a specific individual. The search term is never stored — only a SHA-256 hash is logged in the audit trail.
+        <p
+          style={{
+            fontFamily: 'var(--fb)',
+            fontSize: 13,
+            color: 'var(--mid)',
+            lineHeight: 1.7,
+            maxWidth: 600,
+          }}
+        >
+          Identify all detected data assets containing records for a specific individual. The search
+          term is never stored — only a SHA-256 hash is logged in the audit trail.
         </p>
       </div>
 
-      <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,51,102,0.08)', padding: '28px 32px', marginBottom: 32 }}>
-        <form onSubmit={runSearch} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+      <div
+        style={{
+          background: '#fff',
+          borderRadius: 12,
+          boxShadow: '0 1px 4px rgba(0,51,102,0.08)',
+          padding: '28px 32px',
+          marginBottom: 32,
+        }}
+      >
+        <form
+          onSubmit={runSearch}
+          style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}
+        >
           <div>
-            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>Identifier Type</div>
+            <div
+              style={{
+                fontFamily: 'var(--fb)',
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: '2px',
+                textTransform: 'uppercase',
+                color: 'var(--mid)',
+                marginBottom: 6,
+              }}
+            >
+              Identifier Type
+            </div>
             <select
               value={identifierType}
               onChange={(e) => setIdentifierType(e.target.value)}
-              style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid var(--primary-10)', fontFamily: 'var(--fb)', fontSize: 13, minWidth: 160 }}
+              style={{
+                padding: '10px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--primary-10)',
+                fontFamily: 'var(--fb)',
+                fontSize: 13,
+                minWidth: 160,
+              }}
             >
               <option value="email">Email Address</option>
               <option value="national_id">National ID / SSN / CPF</option>
@@ -3355,20 +3913,56 @@ function DsarTab({ token, API }: { token: string | null; API: string }) {
             </select>
           </div>
           <div style={{ flex: 1, minWidth: 260 }}>
-            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>Identifier Value</div>
+            <div
+              style={{
+                fontFamily: 'var(--fb)',
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: '2px',
+                textTransform: 'uppercase',
+                color: 'var(--mid)',
+                marginBottom: 6,
+              }}
+            >
+              Identifier Value
+            </div>
             <input
               type={identifierType === 'email' ? 'email' : 'text'}
               value={identifierValue}
               onChange={(e) => setIdentifierValue(e.target.value)}
-              placeholder={identifierType === 'email' ? 'data.subject@example.com' : identifierType === 'phone' ? '+55 11 99999-0000' : '123.456.789-09'}
+              placeholder={
+                identifierType === 'email'
+                  ? 'data.subject@example.com'
+                  : identifierType === 'phone'
+                    ? '+55 11 99999-0000'
+                    : '123.456.789-09'
+              }
               required
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid var(--primary-10)', fontFamily: 'var(--fb)', fontSize: 13 }}
+              style={{
+                width: '100%',
+                padding: '10px 14px',
+                borderRadius: 8,
+                border: '1px solid var(--primary-10)',
+                fontFamily: 'var(--fb)',
+                fontSize: 13,
+              }}
             />
           </div>
           <button
             type="submit"
             disabled={loading}
-            style={{ padding: '10px 28px', borderRadius: 8, background: 'var(--primary)', color: '#fff', border: 'none', fontFamily: 'var(--fb)', fontSize: 13, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1 }}
+            style={{
+              padding: '10px 28px',
+              borderRadius: 8,
+              background: 'var(--primary)',
+              color: '#fff',
+              border: 'none',
+              fontFamily: 'var(--fb)',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
+            }}
           >
             {loading ? 'Searching…' : 'Search Data Lake →'}
           </button>
@@ -3376,17 +3970,42 @@ function DsarTab({ token, API }: { token: string | null; API: string }) {
       </div>
 
       {result && (
-        <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,51,102,0.08)', padding: '28px 32px', marginBottom: 32 }}>
+        <div
+          style={{
+            background: '#fff',
+            borderRadius: 12,
+            boxShadow: '0 1px 4px rgba(0,51,102,0.08)',
+            padding: '28px 32px',
+            marginBottom: 32,
+          }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 32, fontWeight: 300, color: result.tables_matched > 0 ? '#E03448' : '#27B97C' }}>
+            <div
+              style={{
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontSize: 32,
+                fontWeight: 300,
+                color: result.tables_matched > 0 ? '#E03448' : '#27B97C',
+              }}
+            >
               {result.tables_matched}
             </div>
             <div>
-              <div style={{ fontFamily: 'var(--fb)', fontSize: 13, fontWeight: 600, color: 'var(--dark)' }}>
-                {result.tables_matched > 0 ? 'Tables contain this PII category' : 'No tables found for this PII category'}
+              <div
+                style={{
+                  fontFamily: 'var(--fb)',
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: 'var(--dark)',
+                }}
+              >
+                {result.tables_matched > 0
+                  ? 'Tables contain this PII category'
+                  : 'No tables found for this PII category'}
               </div>
               <div style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)' }}>
-                Searched for: {result.pii_category_searched} · Search ID: {result.search_id.slice(0, 8)}…
+                Searched for: {result.pii_category_searched} · Search ID:{' '}
+                {result.search_id.slice(0, 8)}…
               </div>
             </div>
           </div>
@@ -3395,49 +4014,145 @@ function DsarTab({ token, API }: { token: string | null; API: string }) {
               <thead>
                 <tr style={{ background: 'var(--light)' }}>
                   {['Data Source', 'Type', 'Est. Rows', 'Confidence', 'Status'].map((h) => (
-                    <th key={h} style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', padding: '10px 14px', textAlign: 'left' }}>{h}</th>
+                    <th
+                      key={h}
+                      style={{
+                        fontFamily: 'var(--fb)',
+                        fontSize: 9,
+                        fontWeight: 600,
+                        letterSpacing: '2px',
+                        textTransform: 'uppercase',
+                        color: 'var(--mid)',
+                        padding: '10px 14px',
+                        textAlign: 'left',
+                      }}
+                    >
+                      {h}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {result.matches.map((m) => (
                   <tr key={m.table_id} style={{ borderTop: '1px solid rgba(0,51,102,0.07)' }}>
-                    <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: 12 }}>{m.source_name}</td>
-                    <td style={{ padding: '12px 14px', fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', textTransform: 'uppercase', letterSpacing: '1px' }}>{m.data_source_type}</td>
-                    <td style={{ padding: '12px 14px', fontFamily: 'var(--fb)', fontSize: 12 }}>{m.estimated_row_count?.toLocaleString() ?? '—'}</td>
-                    <td style={{ padding: '12px 14px' }}><ConfidenceBar value={m.confidence} /></td>
-                    <td style={{ padding: '12px 14px' }}><StatusBadge status={m.status} /></td>
+                    <td style={{ padding: '12px 14px', fontFamily: 'monospace', fontSize: 12 }}>
+                      {m.source_name}
+                    </td>
+                    <td
+                      style={{
+                        padding: '12px 14px',
+                        fontFamily: 'var(--fb)',
+                        fontSize: 11,
+                        color: 'var(--mid)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '1px',
+                      }}
+                    >
+                      {m.data_source_type}
+                    </td>
+                    <td style={{ padding: '12px 14px', fontFamily: 'var(--fb)', fontSize: 12 }}>
+                      {m.estimated_row_count?.toLocaleString() ?? '—'}
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <ConfidenceBar value={m.confidence} />
+                    </td>
+                    <td style={{ padding: '12px 14px' }}>
+                      <StatusBadge status={m.status} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-          <p style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', marginTop: 16, lineHeight: 1.6 }}>
-            These tables contain the detected PII category. Row-level presence of the specific identifier requires manual investigation. This search is logged in the audit trail.
+          <p
+            style={{
+              fontFamily: 'var(--fb)',
+              fontSize: 11,
+              color: 'var(--mid)',
+              marginTop: 16,
+              lineHeight: 1.6,
+            }}
+          >
+            These tables contain the detected PII category. Row-level presence of the specific
+            identifier requires manual investigation. This search is logged in the audit trail.
           </p>
         </div>
       )}
 
       {history.length > 0 && (
-        <div style={{ background: '#fff', borderRadius: 12, boxShadow: '0 1px 4px rgba(0,51,102,0.08)', padding: '28px 32px' }}>
+        <div
+          style={{
+            background: '#fff',
+            borderRadius: 12,
+            boxShadow: '0 1px 4px rgba(0,51,102,0.08)',
+            padding: '28px 32px',
+          }}
+        >
           <Eyebrow>Search History</Eyebrow>
           <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 12 }}>
             <thead>
               <tr style={{ background: 'var(--light)' }}>
                 {['Time', 'Type', 'By', 'Tables Matched'].map((h) => (
-                  <th key={h} style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', padding: '10px 14px', textAlign: 'left' }}>{h}</th>
+                  <th
+                    key={h}
+                    style={{
+                      fontFamily: 'var(--fb)',
+                      fontSize: 9,
+                      fontWeight: 600,
+                      letterSpacing: '2px',
+                      textTransform: 'uppercase',
+                      color: 'var(--mid)',
+                      padding: '10px 14px',
+                      textAlign: 'left',
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {history.slice(0, 10).map((s) => (
                 <tr key={s.search_id} style={{ borderTop: '1px solid rgba(0,51,102,0.07)' }}>
-                  <td style={{ padding: '10px 14px', fontFamily: 'var(--fb)', fontSize: 12, color: 'var(--mid)' }}>
+                  <td
+                    style={{
+                      padding: '10px 14px',
+                      fontFamily: 'var(--fb)',
+                      fontSize: 12,
+                      color: 'var(--mid)',
+                    }}
+                  >
                     {new Date(s.created_at).toLocaleString()}
                   </td>
-                  <td style={{ padding: '10px 14px', fontFamily: 'var(--fb)', fontSize: 12, textTransform: 'capitalize' }}>{s.identifier_type.replace(/_/g, ' ')}</td>
-                  <td style={{ padding: '10px 14px', fontFamily: 'var(--fb)', fontSize: 12, color: 'var(--mid)' }}>{s.initiated_by}</td>
-                  <td style={{ padding: '10px 14px', fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: s.tables_matched_count > 0 ? '#E03448' : 'var(--mid)' }}>
+                  <td
+                    style={{
+                      padding: '10px 14px',
+                      fontFamily: 'var(--fb)',
+                      fontSize: 12,
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {s.identifier_type.replace(/_/g, ' ')}
+                  </td>
+                  <td
+                    style={{
+                      padding: '10px 14px',
+                      fontFamily: 'var(--fb)',
+                      fontSize: 12,
+                      color: 'var(--mid)',
+                    }}
+                  >
+                    {s.initiated_by}
+                  </td>
+                  <td
+                    style={{
+                      padding: '10px 14px',
+                      fontFamily: "'Fraunces', Georgia, serif",
+                      fontSize: 20,
+                      fontWeight: 300,
+                      color: s.tables_matched_count > 0 ? '#E03448' : 'var(--mid)',
+                    }}
+                  >
                     {s.tables_matched_count}
                   </td>
                 </tr>
@@ -3469,7 +4184,14 @@ function SparkLine({ scores }: { scores: number[] }) {
   return (
     <div>
       <svg width={w} height={h} style={{ overflow: 'visible', display: 'block' }}>
-        <polyline points={points} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        <polyline
+          points={points}
+          fill="none"
+          stroke={color}
+          strokeWidth={2}
+          strokeLinejoin="round"
+          strokeLinecap="round"
+        />
         <circle cx={xs[xs.length - 1]} cy={ys[ys.length - 1]} r={4} fill={color} />
       </svg>
       <div style={{ fontFamily: 'var(--fb)', fontSize: 10, color, marginTop: 4 }}>
@@ -3480,33 +4202,63 @@ function SparkLine({ scores }: { scores: number[] }) {
 }
 
 function IntelligenceTab({ token, API }: { token: string | null; API: string }) {
-  const [trends, setTrends] = useState<{ trend: TrendPoint[]; avg_ttr_days: number | null } | null>(null);
-  const [forecast, setForecast] = useState<{ current_score: number; projected_score_30d: number; remediations_per_week: number; total_pending: number; days_to_full_compliance: number | null } | null>(null);
-  const [exposure, setExposure] = useState<{ total_exposed_records: number; estimated_fine_low_eur: number; estimated_fine_high_eur: number; methodology: string } | null>(null);
+  const [trends, setTrends] = useState<{ trend: TrendPoint[]; avg_ttr_days: number | null } | null>(
+    null
+  );
+  const [forecast, setForecast] = useState<{
+    current_score: number;
+    projected_score_30d: number;
+    remediations_per_week: number;
+    total_pending: number;
+    days_to_full_compliance: number | null;
+  } | null>(null);
+  const [exposure, setExposure] = useState<{
+    total_exposed_records: number;
+    estimated_fine_low_eur: number;
+    estimated_fine_high_eur: number;
+    methodology: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useState(() => {
+  useEffect(() => {
+    let cancelled = false;
     const h = { Authorization: `Bearer ${token}` };
+    // A rejected fetch (network error) used to leave the spinner on forever.
+    const getJson = (path: string) =>
+      fetch(`${API}${path}`, { headers: h })
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
     Promise.all([
-      fetch(`${API}/api/v1/compliance/trends`, { headers: h }).then((r) => r.ok ? r.json() : null),
-      fetch(`${API}/api/v1/compliance/forecast`, { headers: h }).then((r) => r.ok ? r.json() : null),
-      fetch(`${API}/api/v1/compliance/risk-exposure`, { headers: h }).then((r) => r.ok ? r.json() : null),
+      getJson('/api/v1/compliance/trends'),
+      getJson('/api/v1/compliance/forecast'),
+      getJson('/api/v1/compliance/risk-exposure'),
     ]).then(([t, f, e]) => {
+      if (cancelled) return;
       setTrends(t);
       setForecast(f);
       setExposure(e);
       setLoading(false);
     });
-  });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, API]);
 
   const card: React.CSSProperties = {
-    background: '#fff', borderRadius: 12,
+    background: '#fff',
+    borderRadius: 12,
     boxShadow: '0 1px 4px rgba(0,51,102,0.08)',
     padding: '28px 32px',
   };
 
   if (loading) {
-    return <div style={{ textAlign: 'center', padding: 60, fontFamily: 'var(--fb)', color: 'var(--mid)' }}>Loading compliance intelligence…</div>;
+    return (
+      <div
+        style={{ textAlign: 'center', padding: 60, fontFamily: 'var(--fb)', color: 'var(--mid)' }}
+      >
+        Loading compliance intelligence…
+      </div>
+    );
   }
 
   const scores = trends?.trend.map((t) => t.compliance_score) ?? [];
@@ -3516,50 +4268,163 @@ function IntelligenceTab({ token, API }: { token: string | null; API: string }) 
   return (
     <>
       <Eyebrow>Live Analytics</Eyebrow>
-      <h2 style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 26, fontWeight: 300, color: 'var(--dark)', marginBottom: 32 }}>
+      <h2
+        style={{
+          fontFamily: "'Fraunces', Georgia, serif",
+          fontSize: 26,
+          fontWeight: 300,
+          color: 'var(--dark)',
+          marginBottom: 32,
+        }}
+      >
         Compliance Intelligence
       </h2>
 
       {/* KPI row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 32 }}>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: 16,
+          marginBottom: 32,
+        }}
+      >
         {[
-          { label: 'Compliance Score', value: `${currentScore}%`, color: scoreColor, sub: 'current' },
-          { label: 'Projected (30d)', value: `${forecast?.projected_score_30d ?? '—'}%`, color: 'var(--primary)', sub: `at ${forecast?.remediations_per_week ?? 0} remediations/week` },
-          { label: 'Open Findings', value: forecast?.total_pending ?? '—', color: '#E03448', sub: 'pending remediation' },
-          { label: 'Avg. Time to Remediation', value: trends?.avg_ttr_days != null ? `${trends.avg_ttr_days}d` : '—', color: 'var(--dark)', sub: '90-day average' },
+          {
+            label: 'Compliance Score',
+            value: `${currentScore}%`,
+            color: scoreColor,
+            sub: 'current',
+          },
+          {
+            label: 'Projected (30d)',
+            value: `${forecast?.projected_score_30d ?? '—'}%`,
+            color: 'var(--primary)',
+            sub: `at ${forecast?.remediations_per_week ?? 0} remediations/week`,
+          },
+          {
+            label: 'Open Findings',
+            value: forecast?.total_pending ?? '—',
+            color: '#E03448',
+            sub: 'pending remediation',
+          },
+          {
+            label: 'Avg. Time to Remediation',
+            value: trends?.avg_ttr_days != null ? `${trends.avg_ttr_days}d` : '—',
+            color: 'var(--dark)',
+            sub: '90-day average',
+          },
         ].map((k) => (
           <div key={k.label} style={card}>
-            <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '3px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 8 }}>{k.label}</div>
-            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 36, fontWeight: 300, color: k.color, lineHeight: 1 }}>{k.value}</div>
-            <div style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', marginTop: 6 }}>{k.sub}</div>
+            <div
+              style={{
+                fontFamily: 'var(--fb)',
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: '3px',
+                textTransform: 'uppercase',
+                color: 'var(--mid)',
+                marginBottom: 8,
+              }}
+            >
+              {k.label}
+            </div>
+            <div
+              style={{
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontSize: 36,
+                fontWeight: 300,
+                color: k.color,
+                lineHeight: 1,
+              }}
+            >
+              {k.value}
+            </div>
+            <div
+              style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', marginTop: 6 }}
+            >
+              {k.sub}
+            </div>
           </div>
         ))}
       </div>
 
       {/* Trend chart */}
       <div style={{ ...card, marginBottom: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24 }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            marginBottom: 24,
+          }}
+        >
           <div>
             <Eyebrow>12-Week Trend</Eyebrow>
-            <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: 'var(--dark)' }}>
+            <div
+              style={{
+                fontFamily: "'Fraunces', Georgia, serif",
+                fontSize: 20,
+                fontWeight: 300,
+                color: 'var(--dark)',
+              }}
+            >
               Compliance Score History
             </div>
           </div>
           {scores.length > 1 && <SparkLine scores={scores} />}
         </div>
-        <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid rgba(0,51,102,0.1)' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 0,
+            borderRadius: 8,
+            overflow: 'hidden',
+            border: '1px solid rgba(0,51,102,0.1)',
+          }}
+        >
           {trends?.trend.slice(-8).map((t, i) => {
             const sc = t.compliance_score;
             const bg = sc >= 90 ? '#E0F7EF' : sc >= 70 ? '#FEF0E6' : '#FDEAEA';
             const fg = sc >= 90 ? '#0D5C3A' : sc >= 70 ? '#7A3800' : '#7A1020';
             return (
-              <div key={t.week_start} style={{ flex: 1, background: bg, padding: '12px 8px', textAlign: 'center', borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.5)' : 'none' }}>
-                <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: fg }}>{sc}%</div>
-                <div style={{ fontFamily: 'var(--fb)', fontSize: 9, color: fg, opacity: 0.7, marginTop: 2 }}>
+              <div
+                key={t.week_start}
+                style={{
+                  flex: 1,
+                  background: bg,
+                  padding: '12px 8px',
+                  textAlign: 'center',
+                  borderLeft: i > 0 ? '1px solid rgba(255,255,255,0.5)' : 'none',
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "'Fraunces', Georgia, serif",
+                    fontSize: 20,
+                    fontWeight: 300,
+                    color: fg,
+                  }}
+                >
+                  {sc}%
+                </div>
+                <div
+                  style={{
+                    fontFamily: 'var(--fb)',
+                    fontSize: 9,
+                    color: fg,
+                    opacity: 0.7,
+                    marginTop: 2,
+                  }}
+                >
                   W{i + 1}
                 </div>
                 {t.new_flagged > 0 && (
-                  <div style={{ fontFamily: 'var(--fb)', fontSize: 9, color: '#E03448', marginTop: 2 }}>+{t.new_flagged}</div>
+                  <div
+                    style={{ fontFamily: 'var(--fb)', fontSize: 9, color: '#E03448', marginTop: 2 }}
+                  >
+                    +{t.new_flagged}
+                  </div>
                 )}
               </div>
             );
@@ -3571,22 +4436,77 @@ function IntelligenceTab({ token, API }: { token: string | null; API: string }) 
       {exposure && (
         <div style={card}>
           <Eyebrow>Regulatory Risk</Eyebrow>
-          <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 20, fontWeight: 300, color: 'var(--dark)', marginBottom: 20 }}>
+          <div
+            style={{
+              fontFamily: "'Fraunces', Georgia, serif",
+              fontSize: 20,
+              fontWeight: 300,
+              color: 'var(--dark)',
+              marginBottom: 20,
+            }}
+          >
             Estimated Fine Exposure
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr 1fr',
+              gap: 16,
+              marginBottom: 16,
+            }}
+          >
             {[
-              { label: 'Exposed Records', value: exposure.total_exposed_records.toLocaleString(), color: '#E03448' },
-              { label: 'Low Estimate', value: `€${exposure.estimated_fine_low_eur.toLocaleString()}`, color: '#F07020' },
-              { label: 'High Estimate', value: `€${exposure.estimated_fine_high_eur.toLocaleString()}`, color: '#E03448' },
+              {
+                label: 'Exposed Records',
+                value: exposure.total_exposed_records.toLocaleString(),
+                color: '#E03448',
+              },
+              {
+                label: 'Low Estimate',
+                value: `€${exposure.estimated_fine_low_eur.toLocaleString()}`,
+                color: '#F07020',
+              },
+              {
+                label: 'High Estimate',
+                value: `€${exposure.estimated_fine_high_eur.toLocaleString()}`,
+                color: '#E03448',
+              },
             ].map((k) => (
-              <div key={k.label} style={{ background: 'var(--light)', borderRadius: 10, padding: '16px 20px' }}>
-                <div style={{ fontFamily: 'var(--fb)', fontSize: 9, fontWeight: 600, letterSpacing: '2px', textTransform: 'uppercase', color: 'var(--mid)', marginBottom: 6 }}>{k.label}</div>
-                <div style={{ fontFamily: "'Fraunces', Georgia, serif", fontSize: 28, fontWeight: 300, color: k.color }}>{k.value}</div>
+              <div
+                key={k.label}
+                style={{ background: 'var(--light)', borderRadius: 10, padding: '16px 20px' }}
+              >
+                <div
+                  style={{
+                    fontFamily: 'var(--fb)',
+                    fontSize: 9,
+                    fontWeight: 600,
+                    letterSpacing: '2px',
+                    textTransform: 'uppercase',
+                    color: 'var(--mid)',
+                    marginBottom: 6,
+                  }}
+                >
+                  {k.label}
+                </div>
+                <div
+                  style={{
+                    fontFamily: "'Fraunces', Georgia, serif",
+                    fontSize: 28,
+                    fontWeight: 300,
+                    color: k.color,
+                  }}
+                >
+                  {k.value}
+                </div>
               </div>
             ))}
           </div>
-          <p style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', lineHeight: 1.7 }}>{exposure.methodology}</p>
+          <p
+            style={{ fontFamily: 'var(--fb)', fontSize: 11, color: 'var(--mid)', lineHeight: 1.7 }}
+          >
+            {exposure.methodology}
+          </p>
         </div>
       )}
     </>
@@ -3624,10 +4544,21 @@ export default function App() {
     <>
       <style>{CSS_VARS}</style>
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <Nav page={page} setPage={(p) => { setPage(p); if (p !== 'pii-report') setSelectedTableId(null); }} />
+        <Nav
+          page={page}
+          setPage={(p) => {
+            setPage(p);
+            if (p !== 'pii-report') setSelectedTableId(null);
+          }}
+        />
         <main style={{ flex: 1 }}>
           {page === 'dashboard' && (
-            <DashboardPage onTableClick={handleTableClick} />
+            // key remounts the page so a new source click re-seeds its filters
+            <DashboardPage
+              key={sourceFilter}
+              onTableClick={handleTableClick}
+              initialSource={sourceFilter}
+            />
           )}
           {page === 'pii-report' && selectedTableId && (
             <PIIReportPage

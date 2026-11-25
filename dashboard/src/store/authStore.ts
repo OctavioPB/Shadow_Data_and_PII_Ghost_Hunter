@@ -16,8 +16,12 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set) => ({
   token: sessionStorage.getItem('pii_token'),
   user: (() => {
-    const raw = sessionStorage.getItem('pii_user');
-    return raw ? (JSON.parse(raw) as AuthUser) : null;
+    try {
+      const raw = sessionStorage.getItem('pii_user');
+      return raw ? (JSON.parse(raw) as AuthUser) : null;
+    } catch {
+      return null;
+    }
   })(),
   setAuth: (token, user) => {
     sessionStorage.setItem('pii_token', token);

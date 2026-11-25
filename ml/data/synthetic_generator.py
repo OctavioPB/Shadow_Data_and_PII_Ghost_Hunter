@@ -15,12 +15,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import random
-import re
 import string
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from faker import Faker
 
@@ -48,60 +46,146 @@ def _fk(locale: str | None = None) -> Faker:
 
 _COLUMN_NAMES: dict[str, list[str]] = {
     "SSN": [
-        "ssn", "social_security_number", "social_security_no", "ss_number",
-        "num_seguro_social", "numero_seguro_social", "cpf_equivalent",
-        "sin", "tax_id_us",
+        "ssn",
+        "social_security_number",
+        "social_security_no",
+        "ss_number",
+        "num_seguro_social",
+        "numero_seguro_social",
+        "cpf_equivalent",
+        "sin",
+        "tax_id_us",
     ],
     "CREDIT_CARD": [
-        "credit_card", "card_number", "cc_number", "credit_card_number",
-        "payment_card", "card_no", "numero_tarjeta", "numero_cartao",
-        "card_num", "pan",
+        "credit_card",
+        "card_number",
+        "cc_number",
+        "credit_card_number",
+        "payment_card",
+        "card_no",
+        "numero_tarjeta",
+        "numero_cartao",
+        "card_num",
+        "pan",
     ],
     "EMAIL": [
-        "email", "email_address", "correo", "correo_electronico",
-        "e_mail", "email_addr", "user_email", "contact_email",
-        "endereço_email", "email_contato",
+        "email",
+        "email_address",
+        "correo",
+        "correo_electronico",
+        "e_mail",
+        "email_addr",
+        "user_email",
+        "contact_email",
+        "endereço_email",
+        "email_contato",
     ],
     "PHONE": [
-        "phone", "phone_number", "telefone", "telefono", "cel", "celular",
-        "mobile", "mobile_number", "contact_phone", "numero_telefone",
-        "fone", "phone_no",
+        "phone",
+        "phone_number",
+        "telefone",
+        "telefono",
+        "cel",
+        "celular",
+        "mobile",
+        "mobile_number",
+        "contact_phone",
+        "numero_telefone",
+        "fone",
+        "phone_no",
     ],
     "FULL_NAME": [
-        "full_name", "name", "customer_name", "nome", "nombre", "nombre_completo",
-        "nome_completo", "person_name", "client_name", "user_name",
-        "display_name", "legal_name",
+        "full_name",
+        "name",
+        "customer_name",
+        "nome",
+        "nombre",
+        "nombre_completo",
+        "nome_completo",
+        "person_name",
+        "client_name",
+        "user_name",
+        "display_name",
+        "legal_name",
     ],
     "DATE_OF_BIRTH": [
-        "date_of_birth", "dob", "birth_date", "birthdate", "fecha_nacimiento",
-        "data_nascimento", "birthday", "born_on", "dt_nasc", "fecha_de_nacimiento",
+        "date_of_birth",
+        "dob",
+        "birth_date",
+        "birthdate",
+        "fecha_nacimiento",
+        "data_nascimento",
+        "birthday",
+        "born_on",
+        "dt_nasc",
+        "fecha_de_nacimiento",
         "dt_nascimento",
     ],
     "ADDRESS": [
-        "address", "street_address", "mailing_address", "home_address",
-        "direccion", "endereço", "endereco", "residential_address",
-        "billing_address", "shipping_address", "domicilio",
+        "address",
+        "street_address",
+        "mailing_address",
+        "home_address",
+        "direccion",
+        "endereço",
+        "endereco",
+        "residential_address",
+        "billing_address",
+        "shipping_address",
+        "domicilio",
     ],
     "BANK_ACCOUNT": [
-        "bank_account", "account_number", "iban", "bank_account_number",
-        "conta_bancaria", "numero_cuenta", "conta_corrente", "account_no",
-        "bank_acc", "routing_account",
+        "bank_account",
+        "account_number",
+        "iban",
+        "bank_account_number",
+        "conta_bancaria",
+        "numero_cuenta",
+        "conta_corrente",
+        "account_no",
+        "bank_acc",
+        "routing_account",
     ],
     "PASSPORT": [
-        "passport", "passport_number", "passport_no", "numero_pasaporte",
-        "numero_passaporte", "passport_id", "travel_document",
-        "passport_num", "doc_viaje",
+        "passport",
+        "passport_number",
+        "passport_no",
+        "numero_pasaporte",
+        "numero_passaporte",
+        "passport_id",
+        "travel_document",
+        "passport_num",
+        "doc_viaje",
     ],
     "NONE": [
-        "id", "product_id", "order_id", "quantity", "price", "status",
-        "created_at", "updated_at", "category", "sku", "score",
-        "rating", "count", "amount", "description", "notes", "code",
-        "region", "country_code", "currency", "tax_rate", "weight",
+        "id",
+        "product_id",
+        "order_id",
+        "quantity",
+        "price",
+        "status",
+        "created_at",
+        "updated_at",
+        "category",
+        "sku",
+        "score",
+        "rating",
+        "count",
+        "amount",
+        "description",
+        "notes",
+        "code",
+        "region",
+        "country_code",
+        "currency",
+        "tax_rate",
+        "weight",
     ],
 }
 
 
 # ─── Value generators ─────────────────────────────────────────────────────────
+
 
 def _gen_ssn(locale: str) -> str:
     fk = _fk(locale)
@@ -174,7 +258,6 @@ def _gen_address(locale: str) -> str:
 
 
 def _gen_bank_account(locale: str) -> str:
-    fk = _fk(locale)
     if locale == "pt_BR":
         # Brazilian: agency-account format
         agency = "".join(random.choices("0123456789", k=4))
@@ -211,7 +294,7 @@ def _gen_none(locale: str) -> str:
         lambda: fk.date_time_this_decade().isoformat(),
         lambda: random.choice(["USD", "BRL", "MXN", "EUR"]),
         lambda: "".join(random.choices(string.ascii_uppercase, k=3))
-              + "".join(random.choices(string.digits, k=6)),
+        + "".join(random.choices(string.digits, k=6)),
     ]
     return random.choice(choices)()
 
@@ -229,8 +312,13 @@ _GENERATORS: dict[str, Callable[[str], str]] = {
     "NONE": _gen_none,
 }
 
+# Same label set as ml.data.pii_dataset.PII_LABELS (canonical sorted order),
+# defined here so the generator does not need torch/transformers to import.
+PII_LABELS: list[str] = sorted(_GENERATORS)
+
 
 # ─── Core generator ───────────────────────────────────────────────────────────
+
 
 def generate_samples(
     label: str,
@@ -275,6 +363,7 @@ def write_jsonl(samples: list[dict[str, str]], path: Path) -> None:
 
 
 # ─── CLI ─────────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate synthetic PII training data")

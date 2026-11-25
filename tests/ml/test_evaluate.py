@@ -9,20 +9,18 @@ from __future__ import annotations
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
-
+from ml.data.pii_dataset import PII_LABELS
 from ml.training.evaluate import (
     KNOWN_PII_FIXTURES,
     evaluate_fixtures,
     evaluate_test_split,
     run_evaluation,
 )
-from ml.data.pii_dataset import PII_LABELS
-
 
 # ─── Fixture list sanity checks ───────────────────────────────────────────────
+
 
 def test_known_pii_fixtures_has_all_labels():
     fixture_labels = {label for _, _, label in KNOWN_PII_FIXTURES}
@@ -36,17 +34,18 @@ def test_known_pii_fixtures_no_raw_pii_in_labels():
 
 
 def test_known_pii_fixtures_values_are_strings():
-    for col, val, label in KNOWN_PII_FIXTURES:
+    for col, val, _label in KNOWN_PII_FIXTURES:
         assert isinstance(col, str) and col
         assert isinstance(val, str) and val
 
 
 # ─── evaluate_fixtures ────────────────────────────────────────────────────────
 
+
 def _perfect_clf_pipeline(inputs):
     """Mock pipeline that always returns the correct label with confidence 1.0."""
     results = []
-    for text in inputs:
+    for _text in inputs:
         # Try to find which label applies from the fixture list
         # We just return all labels with the correct one at 1.0
         scores = [{f"label_{i}": 0.0} for i in range(10)]
@@ -62,17 +61,14 @@ def _make_perfect_pipeline():
     given a list of texts, returns list[list[{"label": str, "score": float}]].
     The pipeline always returns the correct label based on the fixture list.
     """
-    fixture_map = {
-        f"{col}: {val}": label for col, val, label in KNOWN_PII_FIXTURES
-    }
+    fixture_map = {f"{col}: {val}": label for col, val, label in KNOWN_PII_FIXTURES}
 
     def _pipeline(texts):
         results = []
         for text in texts:
             expected = fixture_map.get(text, "NONE")
             scores = [
-                {"label": lbl, "score": 1.0 if lbl == expected else 0.0}
-                for lbl in PII_LABELS
+                {"label": lbl, "score": 1.0 if lbl == expected else 0.0} for lbl in PII_LABELS
             ]
             results.append(scores)
         return results
@@ -93,7 +89,14 @@ def test_evaluate_fixtures_returns_per_fixture_results():
     result = evaluate_fixtures(clf, threshold=0.85)
     assert len(result["fixtures"]) == len(KNOWN_PII_FIXTURES)
     for f in result["fixtures"]:
-        assert set(f.keys()) >= {"column_name", "value", "expected", "predicted", "confidence", "correct"}
+        assert set(f.keys()) >= {
+            "column_name",
+            "value",
+            "expected",
+            "predicted",
+            "confidence",
+            "correct",
+        }
 
 
 def test_evaluate_fixtures_marks_incorrect_predictions():
@@ -109,6 +112,7 @@ def test_evaluate_fixtures_marks_incorrect_predictions():
 
 
 # ─── evaluate_test_split ──────────────────────────────────────────────────────
+
 
 def _make_test_jsonl(path: Path, n: int = 30) -> None:
     records = []
@@ -143,6 +147,7 @@ def test_evaluate_test_split_structure():
 
 def test_evaluate_test_split_threshold_coverage():
     """When model is always confident, coverage must be 1.0."""
+
     def _confident_clf(texts):
         return [
             [{"label": lbl, "score": 1.0 if lbl == "EMAIL" else 0.0} for lbl in PII_LABELS]
@@ -159,6 +164,7 @@ def test_evaluate_test_split_threshold_coverage():
 
 # ─── run_evaluation ───────────────────────────────────────────────────────────
 
+
 def test_run_evaluation_writes_reports():
     perfect_pipe = _make_perfect_pipeline()
 
@@ -169,7 +175,7 @@ def test_run_evaluation_writes_reports():
         report_dir = tmp_path / "reports"
 
         with patch("ml.training.evaluate._load_pipeline", return_value=perfect_pipe):
-            report = run_evaluation(
+            run_evaluation(
                 model_dir="fake/model",
                 test_data_path=str(test_path),
                 report_dir=str(report_dir),
@@ -186,10 +192,10 @@ def test_run_evaluation_writes_reports():
 
 def test_run_evaluation_passed_flag_requires_high_f1():
     """passed=True only when both fixture_accuracy >= 0.95 AND macro_f1 >= 0.90."""
+
     def _bad_clf(texts):
         return [
-            [{"label": lbl, "score": 0.5 / len(PII_LABELS)} for lbl in PII_LABELS]
-            for _ in texts
+            [{"label": lbl, "score": 0.5 / len(PII_LABELS)} for lbl in PII_LABELS] for _ in texts
         ]
 
     with tempfile.TemporaryDirectory() as tmp:

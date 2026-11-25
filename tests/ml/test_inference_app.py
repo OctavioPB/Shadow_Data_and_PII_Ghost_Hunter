@@ -6,16 +6,13 @@ The model pipeline is mocked so no GPU or model weights are needed.
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
-from ml.data.pii_dataset import PII_LABELS
-
-
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
+
 
 def _mock_classify(label: str = "EMAIL", confidence: float = 0.97):
     """Return a classify_column mock that always yields (label, confidence)."""
@@ -30,11 +27,13 @@ def client():
         patch("ml.inference.model_loader.load_duration_seconds", return_value=2.1),
     ):
         from ml.inference.app import app
+
         with TestClient(app, raise_server_exceptions=True) as c:
             yield c
 
 
 # ─── GET /health ─────────────────────────────────────────────────────────────
+
 
 def test_health_returns_200(client):
     resp = client.get("/health")
@@ -46,6 +45,7 @@ def test_health_returns_200(client):
 
 # ─── GET /metrics ─────────────────────────────────────────────────────────────
 
+
 def test_metrics_endpoint_returns_prometheus_format(client):
     resp = client.get("/metrics")
     assert resp.status_code == 200
@@ -53,6 +53,7 @@ def test_metrics_endpoint_returns_prometheus_format(client):
 
 
 # ─── POST /infer — happy path ─────────────────────────────────────────────────
+
 
 def _infer_payload(n_cols: int = 2) -> dict:
     return {
@@ -116,6 +117,7 @@ def test_infer_flagged_false_for_none_category(client):
 
 # ─── POST /infer — validation ─────────────────────────────────────────────────
 
+
 def test_infer_rejects_empty_column_list(client):
     resp = client.post("/infer", json={"table_id": "t", "columns": []})
     assert resp.status_code == 422
@@ -124,10 +126,7 @@ def test_infer_rejects_empty_column_list(client):
 def test_infer_rejects_more_than_50_columns(client):
     payload = {
         "table_id": "t",
-        "columns": [
-            {"column_id": str(i), "column_name": "c", "values": []}
-            for i in range(51)
-        ],
+        "columns": [{"column_id": str(i), "column_name": "c", "values": []} for i in range(51)],
     }
     resp = client.post("/infer", json=payload)
     assert resp.status_code == 422
@@ -148,6 +147,7 @@ def test_infer_handles_empty_values_list(client):
 
 
 # ─── POST /infer — error handling ─────────────────────────────────────────────
+
 
 def test_infer_returns_500_on_model_error(client):
     with patch("ml.inference.app.classify_column", side_effect=RuntimeError("GPU OOM")):

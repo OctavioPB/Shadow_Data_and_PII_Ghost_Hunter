@@ -8,26 +8,23 @@ being pinned, so they just verify structural correctness.
 from __future__ import annotations
 
 import json
-import random
 import tempfile
 from pathlib import Path
 
 import pytest
 
+# Re-export from pii_dataset so both modules agree on the label set
+from ml.data.pii_dataset import PII_LABELS as DATASET_PII_LABELS
 from ml.data.synthetic_generator import (
     _COLUMN_NAMES,
     _GENERATORS,
-    PII_LABELS,
     generate_dataset,
     generate_samples,
     write_jsonl,
 )
 
-# Re-export from pii_dataset so both modules agree on the label set
-from ml.data.pii_dataset import PII_LABELS as DATASET_PII_LABELS
-
-
 # ─── Label consistency ────────────────────────────────────────────────────────
+
 
 def test_generator_labels_match_dataset_labels():
     """Generator categories must exactly match the classifier label set."""
@@ -41,6 +38,7 @@ def test_all_labels_have_column_name_pool():
 
 
 # ─── Single-label generation ──────────────────────────────────────────────────
+
 
 @pytest.mark.parametrize("label", list(_GENERATORS.keys()))
 def test_generate_samples_returns_correct_count(label):
@@ -68,6 +66,7 @@ def test_generate_samples_column_names_from_pool(label):
 
 # ─── Full dataset ─────────────────────────────────────────────────────────────
 
+
 def test_generate_dataset_total_rows():
     dataset = generate_dataset(samples_per_label=20)
     assert len(dataset) == 20 * len(_GENERATORS)
@@ -89,6 +88,7 @@ def test_generate_dataset_is_shuffled():
 
 # ─── JSONL writer ─────────────────────────────────────────────────────────────
 
+
 def test_write_jsonl_roundtrip():
     samples = [{"column_name": "email", "value": "a@b.com", "label": "EMAIL"}]
     with tempfile.TemporaryDirectory() as tmp:
@@ -108,6 +108,7 @@ def test_write_jsonl_creates_parent_dirs():
 
 # ─── Privacy: NONE values should not look like PII ───────────────────────────
 
+
 def test_none_samples_do_not_contain_at_sign():
     """NONE values must not contain '@' (which would look like an email)."""
     samples = generate_samples("NONE", n=500)
@@ -117,6 +118,7 @@ def test_none_samples_do_not_contain_at_sign():
 
 
 # ─── Credit card: basic Luhn check ───────────────────────────────────────────
+
 
 def _luhn_valid(number: str) -> bool:
     digits = [int(c) for c in number if c.isdigit()]

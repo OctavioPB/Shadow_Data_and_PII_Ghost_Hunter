@@ -6,7 +6,6 @@ from pydantic import ValidationError
 
 from scanner.schemas.events import DataSourceType, PIICandidateEvent, TableCreatedEvent
 
-
 # ─── Fixtures ────────────────────────────────────────────────────────────────
 
 

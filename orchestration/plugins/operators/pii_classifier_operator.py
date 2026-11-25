@@ -17,12 +17,14 @@ Privacy guarantee (S4-04):
 
 from __future__ import annotations
 
-import json
+import io
 import logging
 import os
 from typing import Any
 
+import boto3
 import httpx
+import pandas as pd
 from airflow.models import BaseOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.utils.decorators import apply_defaults
@@ -101,20 +103,15 @@ class PIIClassifierOperator(BaseOperator):
 
     def _read_sample_values(self) -> dict[str, list[str]]:
         """Download parquet from S3 and return {column_name: [values]}."""
-        import io
-        import boto3
-        import pandas as pd
-
         uri = self.sample_s3_path
         if uri.startswith("s3://"):
-            without = uri[len("s3://"):]
+            without = uri[len("s3://") :]
             bucket, _, key = without.partition("/")
             s3 = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
             obj = s3.get_object(Bucket=bucket, Key=key)
             df = pd.read_parquet(io.BytesIO(obj["Body"].read()))
         else:
             # Local path for testing
-            import pandas as pd
             df = pd.read_parquet(uri)
 
         # Limit to configured max values; convert to strings
@@ -142,9 +139,7 @@ class PIIClassifierOperator(BaseOperator):
         with httpx.Client(timeout=30.0) as client:
             resp = client.post(url, json=payload)
         if resp.status_code != 200:
-            raise RuntimeError(
-                f"Inference service returned {resp.status_code}: {resp.text[:200]}"
-            )
+            raise RuntimeError(f"Inference service returned {resp.status_code}: {resp.text[:200]}")
         return resp.json()["results"]
 
     def _persist_findings(self, findings: list[dict]) -> dict:
@@ -158,13 +153,24 @@ class PIIClassifierOperator(BaseOperator):
 
             status = "flagged" if flagged else "clean"
 
+            # Upsert on the natural key (migration 0008) so Airflow retries do not
+            # duplicate findings. A finding already remediated/quarantined keeps
+            # that status — a re-scan must not resurrect it as 'flagged'.
             hook.run(
                 """
                 INSERT INTO pii_findings
                     (scanner_event_id, table_id, column_name,
                      pii_category, confidence, flagged, status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT DO NOTHING
+                ON CONFLICT (scanner_event_id, column_name) DO UPDATE SET
+                    pii_category = EXCLUDED.pii_category,
+                    confidence   = EXCLUDED.confidence,
+                    flagged      = EXCLUDED.flagged,
+                    status       = CASE
+                        WHEN pii_findings.status IN ('remediated', 'quarantined')
+                            THEN pii_findings.status
+                        ELSE EXCLUDED.status
+                    END
                 """,
                 parameters=[
                     self.scanner_event_id,
@@ -191,9 +197,16 @@ class PIIClassifierOperator(BaseOperator):
             "scanner_event_id": self.scanner_event_id,
             "total_count": len(findings),
             "flagged_count": flagged_count,
-            "flagged_categories": list(
-                {f["pii_category"] for f in findings if f["flagged"]}
-            ),
+            "flagged_categories": sorted({f["pii_category"] for f in findings if f["flagged"]}),
+            # Needed by the remediation DAG to know which columns to anonymize.
+            "flagged_columns": [
+                {
+                    "column_name": f["column_id"].split(":", 1)[-1],
+                    "pii_category": f["pii_category"],
+                }
+                for f in findings
+                if f["flagged"]
+            ],
         }
 
     def _update_column_sample_statuses(self, findings: list[dict]) -> None:

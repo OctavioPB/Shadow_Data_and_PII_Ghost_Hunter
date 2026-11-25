@@ -8,13 +8,16 @@ Privacy: verifies that raw sample values are never written to the DB.
 from __future__ import annotations
 
 import io
-import json
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import pytest
 import pyarrow as pa
 import pyarrow.parquet as pq
+import pytest
+
+# Airflow 2.8 pins SQLAlchemy<2, so it cannot share an env with the API; these
+# tests run in the `airflow-test` CI job (apache/airflow image) instead.
+pytest.importorskip("airflow", reason="apache-airflow not installed")
 
 
 def _make_parquet_bytes(df: pd.DataFrame) -> bytes:
@@ -24,32 +27,30 @@ def _make_parquet_bytes(df: pd.DataFrame) -> bytes:
 
 
 def _make_operator(**overrides):
-    import sys
     import os
+    import sys
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../orchestration/plugins"))
     from operators.pii_classifier_operator import PIIClassifierOperator
 
-    defaults = dict(
-        task_id="test_classify",
-        scanner_event_id="evt-uuid-001",
-        table_id="evt-uuid-001",
-        sample_s3_path="s3://staging/samples/evt-uuid-001/sample.parquet",
-        columns=[
+    defaults = {
+        "task_id": "test_classify",
+        "scanner_event_id": "evt-uuid-001",
+        "table_id": "evt-uuid-001",
+        "sample_s3_path": "s3://staging/samples/evt-uuid-001/sample.parquet",
+        "columns": [
             {"name": "email", "dtype": "object"},
             {"name": "id", "dtype": "int64"},
         ],
-        inference_api_url="http://mock-inference:8001",
-        postgres_conn_id="test_db",
-    )
+        "inference_api_url": "http://mock-inference:8001",
+        "postgres_conn_id": "test_db",
+    }
     return PIIClassifierOperator(**{**defaults, **overrides})
 
 
 def _mock_s3_parquet(df: pd.DataFrame) -> MagicMock:
     mock_s3 = MagicMock()
-    mock_s3.get_object.return_value = {
-        "Body": MagicMock(read=lambda: _make_parquet_bytes(df))
-    }
+    mock_s3.get_object.return_value = {"Body": MagicMock(read=lambda: _make_parquet_bytes(df))}
     return mock_s3
 
 
@@ -62,14 +63,25 @@ def _mock_inference_response(results: list[dict]) -> MagicMock:
 
 # ─── execute() happy path ─────────────────────────────────────────────────────
 
+
 def test_operator_calls_inference_api():
     """Verify inference service is called with correct payload structure."""
     df = pd.DataFrame({"email": ["a@b.com", "c@d.com"], "id": [1, 2]})
     mock_s3 = _mock_s3_parquet(df)
     mock_resp = _mock_inference_response(
         [
-            {"column_id": "evt-uuid-001:email", "pii_category": "EMAIL", "confidence": 0.97, "flagged": True},
-            {"column_id": "evt-uuid-001:id", "pii_category": "NONE", "confidence": 0.92, "flagged": False},
+            {
+                "column_id": "evt-uuid-001:email",
+                "pii_category": "EMAIL",
+                "confidence": 0.97,
+                "flagged": True,
+            },
+            {
+                "column_id": "evt-uuid-001:id",
+                "pii_category": "NONE",
+                "confidence": 0.92,
+                "flagged": False,
+            },
         ]
     )
 
@@ -84,7 +96,7 @@ def test_operator_calls_inference_api():
         mock_boto.client.return_value = mock_s3
         mock_http.return_value.__enter__.return_value.post.return_value = mock_resp
 
-        summary = op.execute(context={})
+        op.execute(context={})
 
     # Inference must have been called
     mock_http.return_value.__enter__.return_value.post.assert_called_once()
@@ -97,8 +109,18 @@ def test_operator_returns_correct_summary():
     mock_s3 = _mock_s3_parquet(df)
     mock_resp = _mock_inference_response(
         [
-            {"column_id": "evt-uuid-001:email", "pii_category": "EMAIL", "confidence": 0.97, "flagged": True},
-            {"column_id": "evt-uuid-001:id", "pii_category": "NONE", "confidence": 0.91, "flagged": False},
+            {
+                "column_id": "evt-uuid-001:email",
+                "pii_category": "EMAIL",
+                "confidence": 0.97,
+                "flagged": True,
+            },
+            {
+                "column_id": "evt-uuid-001:id",
+                "pii_category": "NONE",
+                "confidence": 0.91,
+                "flagged": False,
+            },
         ]
     )
     mock_hook = MagicMock()
@@ -123,8 +145,18 @@ def test_operator_inserts_one_finding_per_column():
     mock_s3 = _mock_s3_parquet(df)
     mock_resp = _mock_inference_response(
         [
-            {"column_id": "evt-uuid-001:email", "pii_category": "EMAIL", "confidence": 0.97, "flagged": True},
-            {"column_id": "evt-uuid-001:id", "pii_category": "NONE", "confidence": 0.91, "flagged": False},
+            {
+                "column_id": "evt-uuid-001:email",
+                "pii_category": "EMAIL",
+                "confidence": 0.97,
+                "flagged": True,
+            },
+            {
+                "column_id": "evt-uuid-001:id",
+                "pii_category": "NONE",
+                "confidence": 0.91,
+                "flagged": False,
+            },
         ]
     )
     mock_hook = MagicMock()
@@ -145,13 +177,21 @@ def test_operator_inserts_one_finding_per_column():
 
 # ─── Privacy: raw values must not reach the DB ───────────────────────────────
 
+
 def test_raw_values_not_written_to_db():
     """The values read from S3 must NOT appear in any DB INSERT call."""
     sentinel = "TOP_SECRET_EMAIL@classified.gov"
     df = pd.DataFrame({"email": [sentinel]})
     mock_s3 = _mock_s3_parquet(df)
     mock_resp = _mock_inference_response(
-        [{"column_id": "evt-uuid-001:email", "pii_category": "EMAIL", "confidence": 0.97, "flagged": True}]
+        [
+            {
+                "column_id": "evt-uuid-001:email",
+                "pii_category": "EMAIL",
+                "confidence": 0.97,
+                "flagged": True,
+            }
+        ]
     )
     mock_hook = MagicMock()
 
@@ -168,12 +208,13 @@ def test_raw_values_not_written_to_db():
     # Inspect all DB calls — none should contain the sentinel value
     for db_call in mock_hook.run.call_args_list:
         all_args = str(db_call)
-        assert sentinel not in all_args, (
-            f"Sensitive value '{sentinel}' found in DB call — privacy violation"
-        )
+        assert (
+            sentinel not in all_args
+        ), f"Sensitive value '{sentinel}' found in DB call — privacy violation"
 
 
 # ─── Error handling ───────────────────────────────────────────────────────────
+
 
 def test_operator_raises_on_inference_error():
     df = pd.DataFrame({"email": ["a@b.com"]})
@@ -195,6 +236,7 @@ def test_operator_raises_on_inference_error():
 
 # ─── Inference payload: values capped at MAX_VALUES_PER_COL ──────────────────
 
+
 def test_operator_caps_values_per_column():
     """At most 10 values per column are sent to the inference API."""
     from operators.pii_classifier_operator import _MAX_VALUES_PER_COL
@@ -202,7 +244,14 @@ def test_operator_caps_values_per_column():
     many_rows = pd.DataFrame({"email": [f"u{i}@example.com" for i in range(50)]})
     mock_s3 = _mock_s3_parquet(many_rows)
     mock_resp = _mock_inference_response(
-        [{"column_id": "evt-uuid-001:email", "pii_category": "EMAIL", "confidence": 0.97, "flagged": True}]
+        [
+            {
+                "column_id": "evt-uuid-001:email",
+                "pii_category": "EMAIL",
+                "confidence": 0.97,
+                "flagged": True,
+            }
+        ]
     )
     mock_hook = MagicMock()
 

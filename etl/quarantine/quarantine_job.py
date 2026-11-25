@@ -24,7 +24,6 @@ import uuid
 from typing import Any
 
 import boto3
-import botocore
 import sqlalchemy as sa
 
 log = logging.getLogger(__name__)
@@ -35,27 +34,41 @@ _AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 
 # ─── Idempotency check ────────────────────────────────────────────────────────
 
+
 def _already_quarantined(database_url: str, table_id: str) -> bool:
     engine = sa.create_engine(database_url)
-    with engine.connect() as conn:
-        row = conn.execute(
-            sa.text(
-                "SELECT 1 FROM quarantine_manifest "
-                "WHERE table_id = :tid AND status = 'quarantined' LIMIT 1"
-            ),
-            {"tid": table_id},
-        ).fetchone()
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(
+                sa.text(
+                    "SELECT 1 FROM quarantine_manifest "
+                    "WHERE table_id = :tid AND status = 'quarantined' LIMIT 1"
+                ),
+                {"tid": table_id},
+            ).fetchone()
+    finally:
+        engine.dispose()
     return row is not None
 
 
 # ─── S3 helpers ───────────────────────────────────────────────────────────────
 
+
 def _list_s3_objects(s3_client, bucket: str, prefix: str) -> list[dict]:
-    """List all objects under *bucket/prefix*."""
+    """List the object *prefix* itself or the objects under the folder *prefix*/.
+
+    S3 prefixes are plain string prefixes, so ``data/users`` also matches
+    ``data/users_backup/...``. Those siblings must never be moved.
+    """
+    folder = prefix.rstrip("/") + "/"
     paginator = s3_client.get_paginator("list_objects_v2")
     objects = []
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
-        objects.extend(page.get("Contents", []))
+        objects.extend(
+            obj
+            for obj in page.get("Contents", [])
+            if not prefix or obj["Key"] == prefix or obj["Key"].startswith(folder)
+        )
     return objects
 
 
@@ -84,6 +97,8 @@ def _move_s3_prefix(
     """
     Copy all objects under source_prefix to dest_prefix, then delete originals.
     Returns (file_count, total_bytes).
+
+    Reusable for any prefix move (quarantine, promotion of anonymized output).
     """
     objects = _list_s3_objects(s3_client, source_bucket, source_prefix)
     if not objects:
@@ -93,7 +108,8 @@ def _move_s3_prefix(
     total_bytes = 0
     for obj in objects:
         key = obj["Key"]
-        relative = key[len(source_prefix):]
+        # A single-object prefix has no relative part: keep its file name.
+        relative = key[len(source_prefix) :] or key.rsplit("/", 1)[-1]
         dest_key = dest_prefix.rstrip("/") + "/" + relative.lstrip("/")
         _copy_object(s3_client, source_bucket, key, dest_bucket, dest_key)
         total_bytes += obj.get("Size", 0)
@@ -107,6 +123,7 @@ def _move_s3_prefix(
 
 
 # ─── Core quarantine logic ────────────────────────────────────────────────────
+
 
 def run_quarantine(
     table_id: str,
@@ -128,7 +145,7 @@ def run_quarantine(
     # ── Parse source S3 path ─────────────────────────────────────────────────
     if not source_s3_path.startswith("s3://"):
         raise ValueError(f"Expected s3:// URI, got: {source_s3_path!r}")
-    without = source_s3_path[len("s3://"):]
+    without = source_s3_path[len("s3://") :]
     source_bucket, _, source_prefix = without.partition("/")
     dest_prefix = f"pending/{table_id}/"
 
@@ -152,7 +169,7 @@ def run_quarantine(
                     (id, table_id, source_s3_path, quarantine_s3_path,
                      flagged_categories, file_count, total_bytes, status)
                 VALUES
-                    (:id, :tid, :src, :dest, :cats::jsonb, :fc, :tb, 'quarantined')
+                    (:id, :tid, :src, :dest, CAST(:cats AS jsonb), :fc, :tb, 'quarantined')
                 ON CONFLICT DO NOTHING
                 """
             ),
@@ -167,10 +184,12 @@ def run_quarantine(
             },
         )
 
-        # ── Update pii_findings → 'quarantined' ──────────────────────────────
+        # ── Update pii_findings → 'quarantined' (flagged columns only; clean
+        # columns stay 'clean' so they are not reported as remediated PII) ─────
         conn.execute(
             sa.text(
-                "UPDATE pii_findings SET status = 'quarantined' WHERE table_id = :tid"
+                "UPDATE pii_findings SET status = 'quarantined' "
+                "WHERE table_id = :tid AND flagged = true"
             ),
             {"tid": table_id},
         )
@@ -180,7 +199,8 @@ def run_quarantine(
             sa.text(
                 """
                 INSERT INTO audit_log (event_type, table_id, actor, details_json)
-                VALUES ('quarantine_completed', :tid, 'etl:quarantine_job', :details::jsonb)
+                VALUES ('quarantine_completed', :tid, 'etl:quarantine_job',
+                        CAST(:details AS jsonb))
                 """
             ),
             {

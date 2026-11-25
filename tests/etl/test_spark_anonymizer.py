@@ -10,14 +10,19 @@ from __future__ import annotations
 
 import json
 import re
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 pyspark = pytest.importorskip("pyspark", reason="pyspark not installed")
 
-from pyspark.sql import SparkSession
-from etl.anonymizers.spark_anonymizer import anonymize_dataframe, run_spark_anonymization
+# Imported after importorskip on purpose: the module is skipped without pyspark.
+from pyspark.sql import SparkSession  # noqa: E402
+
+from etl.anonymizers.spark_anonymizer import (  # noqa: E402
+    anonymize_dataframe,
+    run_spark_anonymization,
+)
 
 
 @pytest.fixture(scope="module")
@@ -33,6 +38,7 @@ def spark():
 
 
 # ─── anonymize_dataframe ──────────────────────────────────────────────────────
+
 
 def test_anonymize_dataframe_email_column(spark):
     df = spark.createDataFrame(
@@ -94,6 +100,7 @@ def test_anonymize_dataframe_idempotent_email(spark):
 
 # ─── run_spark_anonymization — idempotency at job level ─────────────────────
 
+
 def test_run_spark_anonymization_skips_if_already_completed():
     with (
         patch("etl.anonymizers.spark_anonymizer._already_anonymized", return_value=True),
@@ -102,7 +109,7 @@ def test_run_spark_anonymization_skips_if_already_completed():
         result = run_spark_anonymization(
             table_id="tbl-001",
             source_path="s3://bucket/key/",
-            output_path="s3://bucket/key/",
+            output_path="s3://bucket/key__anonymized/",
             flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
             database_url="postgresql://localhost/test",
         )
@@ -118,24 +125,25 @@ def test_run_spark_anonymization_writes_audit_on_success(spark):
 
     mock_spark_session = MagicMock()
     mock_spark_session.read.parquet.return_value = mock_df
-    written_df = MagicMock()
-    mock_df_write = MagicMock()
 
     with (
         patch("etl.anonymizers.spark_anonymizer._already_anonymized", return_value=False),
         patch("etl.anonymizers.spark_anonymizer._write_audit_record") as mock_audit,
         patch("etl.anonymizers.spark_anonymizer.SparkSession") as MockSparkSession,
     ):
-        MockSparkSession.builder.appName.return_value.master.return_value\
-            .config.return_value.getOrCreate.return_value = mock_spark_session
+        MockSparkSession.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = (
+            mock_spark_session
+        )
         mock_spark_session.read.parquet.return_value = mock_df
 
         # Intercept write
-        with patch.object(mock_df.__class__, "write", new_callable=lambda: property(lambda self: MagicMock())):
+        with patch.object(
+            mock_df.__class__, "write", new_callable=lambda: property(lambda self: MagicMock())
+        ):
             run_spark_anonymization(
                 table_id="tbl-audit",
                 source_path="s3://b/k/",
-                output_path="s3://b/k/",
+                output_path="s3://b/k__anonymized/",
                 flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
                 database_url="postgresql://localhost/test",
                 spark_master="local[1]",
@@ -147,6 +155,7 @@ def test_run_spark_anonymization_writes_audit_on_success(spark):
 
 
 # ─── Audit record: no raw values ─────────────────────────────────────────────
+
 
 def test_audit_record_contains_no_raw_values(spark):
     """The audit record must contain only metadata — never individual cell values."""
@@ -165,13 +174,14 @@ def test_audit_record_contains_no_raw_values(spark):
         patch("etl.anonymizers.spark_anonymizer._write_audit_record", side_effect=_fake_audit),
         patch("etl.anonymizers.spark_anonymizer.SparkSession") as MockSparkSession,
     ):
-        MockSparkSession.builder.appName.return_value.master.return_value\
-            .config.return_value.getOrCreate.return_value = mock_spark_session
+        MockSparkSession.builder.appName.return_value.master.return_value.config.return_value.getOrCreate.return_value = (
+            mock_spark_session
+        )
 
         run_spark_anonymization(
             table_id="tbl-priv",
             source_path="s3://b/k/",
-            output_path="s3://b/k/",
+            output_path="s3://b/k__anonymized/",
             flagged_columns=[{"column_name": "email", "pii_category": "EMAIL"}],
             database_url="postgresql://localhost/test",
             spark_master="local[1]",

@@ -1,7 +1,6 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -25,7 +24,7 @@ class FileFormat(str, Enum):
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class TableCreatedEvent(BaseModel):
@@ -33,9 +32,9 @@ class TableCreatedEvent(BaseModel):
     table_name: str
     database_name: str
     data_source_type: DataSourceType
-    owner_email: Optional[str] = None
-    column_count: Optional[int] = None
-    location: Optional[str] = None
+    owner_email: str | None = None
+    column_count: int | None = None
+    location: str | None = None
     created_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -44,9 +43,9 @@ class FileMovedEvent(BaseModel):
     bucket: str
     prefix: str
     file_format: FileFormat = FileFormat.UNKNOWN
-    estimated_row_count: Optional[int] = None
-    file_size_bytes: Optional[int] = None
-    owner_email: Optional[str] = None
+    estimated_row_count: int | None = None
+    file_size_bytes: int | None = None
+    owner_email: str | None = None
     moved_at: datetime = Field(default_factory=_utcnow)
 
 
@@ -56,8 +55,8 @@ class PIICandidateEvent(BaseModel):
     source_name: str
     data_source_type: DataSourceType
     estimated_column_count: int = 0
-    owner_email: Optional[str] = None
-    bucket: Optional[str] = None
-    file_format: Optional[FileFormat] = None
-    estimated_row_count: Optional[int] = None
+    owner_email: str | None = None
+    bucket: str | None = None
+    file_format: FileFormat | None = None
+    estimated_row_count: int | None = None
     enqueued_at: datetime = Field(default_factory=_utcnow)

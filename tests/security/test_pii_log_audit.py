@@ -13,20 +13,15 @@ These tests run against the FastAPI app with mocked DB — no Docker required.
 
 from __future__ import annotations
 
-import io
-import logging
-import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-import structlog
 from httpx import ASGITransport, AsyncClient
 
 from api.auth import get_current_user
 from api.db import get_db
 from api.main import app
 from api.middleware import _buckets  # access internal state for rate-limit tests
-
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -109,9 +104,7 @@ async def test_no_hsts_without_forwarded_proto(client: AsyncClient):
 async def test_hsts_present_when_behind_https_proxy(client: AsyncClient):
     """HSTS must be added when X-Forwarded-Proto: https is present."""
     set_db()
-    resp = await client.get(
-        "/api/v1/risks", headers={"X-Forwarded-Proto": "https"}
-    )
+    resp = await client.get("/api/v1/risks", headers={"X-Forwarded-Proto": "https"})
     assert "Strict-Transport-Security" in resp.headers
     assert "max-age=31536000" in resp.headers["Strict-Transport-Security"]
 
@@ -201,7 +194,9 @@ async def test_invalid_json_body_returns_422_not_500(client: AsyncClient):
     """Malformed JSON must return 422 Unprocessable Entity, never a 500 stack trace."""
     app.dependency_overrides.pop(get_current_user, None)
     app.dependency_overrides[get_current_user] = lambda: {
-        "email": "dpo@company.com", "role": "dpo", "name": "DPO"
+        "email": "dpo@company.com",
+        "role": "dpo",
+        "name": "DPO",
     }
     set_db()
     resp = await client.post(
@@ -219,7 +214,9 @@ async def test_invalid_json_body_returns_422_not_500(client: AsyncClient):
 async def test_invalid_action_returns_422_without_traceback(client: AsyncClient):
     set_db()
     app.dependency_overrides[get_current_user] = lambda: {
-        "email": "dpo@company.com", "role": "dpo", "name": "DPO"
+        "email": "dpo@company.com",
+        "role": "dpo",
+        "name": "DPO",
     }
     resp = await client.post(
         "/api/v1/tables/tbl-001/remediate",
@@ -250,9 +247,9 @@ async def test_audit_log_export_does_not_contain_pii_sentinel_values(client: Asy
         "john.doe@",
     ]
     for sentinel in pii_sentinels:
-        assert sentinel not in csv_content, (
-            f"PII sentinel value {sentinel!r} found in audit log CSV export"
-        )
+        assert (
+            sentinel not in csv_content
+        ), f"PII sentinel value {sentinel!r} found in audit log CSV export"
 
 
 async def test_risks_response_does_not_expose_raw_values(client: AsyncClient):
@@ -270,8 +267,15 @@ async def test_risks_response_does_not_expose_raw_values(client: AsyncClient):
         assert "values" not in item, "Raw column values must never appear in risk inventory"
         assert "sample" not in item
         expected_keys = {
-            "table_id", "source_name", "data_source_type", "pii_categories",
-            "max_confidence", "status", "flagged_column_count", "last_scanned", "owner_email"
+            "table_id",
+            "source_name",
+            "data_source_type",
+            "pii_categories",
+            "max_confidence",
+            "status",
+            "flagged_column_count",
+            "last_scanned",
+            "owner_email",
         }
         unexpected = set(item.keys()) - expected_keys
         assert not unexpected, f"Unexpected keys in risk item (possible data leak): {unexpected}"
