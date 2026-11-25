@@ -7,7 +7,11 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 COPY api/requirements.txt ./requirements.txt
-RUN pip install -r requirements.txt
+# setuptools/wheel ship with the base image but are only build tools; the API
+# never imports them at runtime. Removing them drops their vendored packages
+# (jaraco.context, wheel) that Trivy flags as HIGH.
+RUN pip install -r requirements.txt \
+    && pip uninstall -y setuptools wheel
 
 COPY api/ ./api/
 

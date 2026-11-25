@@ -33,7 +33,11 @@ ENV PYTHONUNBUFFERED=1 \
     MODEL_CONFIDENCE_THRESHOLD=0.85 \
     MODEL_VERSION=dev
 
-RUN useradd --create-home --uid 10001 app
+# setuptools/wheel are build tools only (not imported at runtime); removing them
+# drops their vendored packages that Trivy flags. Separate step so the large
+# dependency layer above stays cached.
+RUN pip uninstall -y setuptools wheel \
+    && useradd --create-home --uid 10001 app
 USER app
 
 EXPOSE 8001

@@ -1,0 +1,9 @@
+# Without this, `COPY . .` overwrote the container's node_modules with the
+# host's (wrong-platform native binaries such as esbuild) and copied .env.
+node_modules
+dist
+coverage
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
