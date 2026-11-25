@@ -104,6 +104,8 @@ audit_log / pii_findings ──► FastAPI ──► React dashboard
 | `alembic/` | Database migrations |
 | `infra/` | Helm charts, Terraform, Grafana dashboards, alerting |
 
+Detailed diagrams, the data model and the API surface are in [docs/architecture.md](docs/architecture.md).
+
 ### Remediation guarantees
 
 - **Sequential, never parallel.** Anonymization and quarantine both touch the source path.
@@ -194,6 +196,16 @@ The Airflow providers are not pip-installed; they come with the `apache/airflow`
 
 ---
 
+## Status
+
+The core pipeline, API and dashboard work end to end. CI is green locally:
+- 317 Python tests and 47 Airflow tests pass, with 85.8% coverage;
+- pip-audit, npm audit (high/critical) and Trivy are clean.
+
+**No production model has been trained yet**: model quality numbers are targets (macro F1 ≥ 0.90), not results. See [docs/results.md](docs/results.md) for what is measured, what is only a target, and what is still unmeasured.
+
+---
+
 ## Known limitations
 
 - The `apache/airflow` image used by docker-compose has no pyspark or JVM. Locally, anonymization therefore fails and the remediation DAG falls back to quarantine plus DPO notification.
@@ -205,6 +217,12 @@ The Airflow providers are not pip-installed; they come with the `apache/airflow`
 
 ## Documentation
 
+Index: [docs/README.md](docs/README.md).
+
+- [Architecture](docs/architecture.md): components, data flow, data model, API, deployment
+- [Results](docs/results.md): quality gates, supply-chain scans, model status, defects fixed, KPIs still to measure
+- [Business Decisions](docs/business-decisions.md): problem, users, product decisions, economics, KPIs, risks
+- [Engineering Decisions](docs/engineering-decisions.md): technical decision log from the 2026 audit
 - [Getting Started](docs/getting-started.md)
 - [Security Review](docs/security-review.md)
 - [Data Retention Policy](docs/data-retention-policy.md)

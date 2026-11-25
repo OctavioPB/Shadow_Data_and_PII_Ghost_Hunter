@@ -59,7 +59,8 @@ WHERE pf.table_id = :tid
 **Status: ✅ Pass**
 
 - JWT tokens use HS256 with a secret injected via `JWT_SECRET_KEY` env var (never in code).
-- `python-jose` handles token signing and verification with algorithm pinning:
+- `PyJWT` handles token signing and verification with algorithm pinning (python-jose was
+  replaced because its `ecdsa` dependency has an unfixed advisory):
   `jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])` — prevents algorithm confusion attacks.
 - TLS 1.2+ required for all external connections (Kafka, PostgreSQL, Redis) — enforced at
   infra level (Helm charts + AWS MSK/RDS TLS settings).
@@ -147,7 +148,7 @@ Security properties enforced at design level:
 
 **Remaining items:**
 - Content-Security-Policy (CSP) header — implement at nginx/ALB level for the React SPA.
-- Remove Swagger in production: set `docs_url=None` when `ENVIRONMENT=production`.
+- Remove Swagger in production: set `API_DOCS_ENABLED=false` (hides `/docs` and `/openapi.json`; ReDoc is always disabled).
 
 ---
 
@@ -156,19 +157,23 @@ Security properties enforced at design level:
 **Status: ⚠️ Monitor**
 
 **CI checks added (Sprint 7):**
-```yaml
-- name: pip audit
-  run: pip install pip-audit && pip-audit -r requirements.txt --exit-code 1
-- name: npm audit
-  run: npm audit --audit-level=high
-```
+- pip-audit runs as one blocking step per requirements file (`requirements.txt`,
+  `api/requirements.txt`, `requirements-ml.txt`, `requirements-train.txt`). The ML steps
+  deliberately skip the PyTorch index: pip-audit ignores `+cpu` builds, so torch would go
+  unaudited.
+- `npm audit --audit-level=high` on the dashboard.
 
-**Trivy image scans:** Run on all three Docker images (API, Inference, Dashboard) on every PR.
-Exit code 1 on CRITICAL severity; HIGH severity scanned and reported.
+**Trivy image scans:** Run on all three Docker images on every PR. API and Dashboard fail
+on CRITICAL or HIGH; Inference fails on CRITICAL (it is currently also clean at HIGH).
+Python images remove setuptools/wheel after install, because their vendored packages carry
+HIGH advisories.
 
 **Known dependency notes:**
-- `torch==2.3.0` — large attack surface; pinned to specific version; monitor CVE advisories.
-- `pyspark==3.5.1` — pinned; Spark CVEs are rare but impactful.
+- `torch==2.15.0`: large attack surface; pinned and audited through its PyPI release.
+- `pyspark==3.5.9`: pinned; Spark CVEs are rare but impactful.
+- numpy/pandas/pyarrow stay on NumPy 1.x (`pyarrow==23.0.1`); see
+  [engineering-decisions.md ED-06](engineering-decisions.md#ed-06-stay-on-numpy-1x-for-now).
+- 6 moderate npm advisories remain in the ESLint 8 dev toolchain (not shipped).
 - `passlib==1.7.4` + `bcrypt` — version compatibility issue documented; replaced with
   env-configurable static credentials for dev; production must use DB-backed user table.
 
@@ -282,7 +287,7 @@ Privacy-safe logging is the core design constraint (from `CLAUDE.md`):
 - [x] Stack traces not exposed in production responses (FastAPI default exception handler)
 - [x] No PII values in any log stream (verified in tests)
 - [ ] Check error messages don't reveal internal DB schema or table names
-- [ ] Confirm Swagger/OpenAPI not accessible in production (`docs_url=None`)
+- [ ] Confirm Swagger/OpenAPI not accessible in production (`API_DOCS_ENABLED=false`)
 
 ### Transport Security
 - [ ] Verify TLS 1.2+ enforced for Kafka connections (MSK config)
@@ -291,9 +296,9 @@ Privacy-safe logging is the core design constraint (from `CLAUDE.md`):
 - [ ] Run `testssl.sh` against production endpoint
 
 ### Dependency Audit
-- [x] `pip audit -r requirements.txt` — zero critical CVEs
-- [x] `npm audit --audit-level=high` — zero high/critical CVEs
-- [x] Trivy scan on all Docker images — zero CRITICAL CVEs
+- [x] pip-audit on every requirements file: no known vulnerabilities
+- [x] `npm audit --audit-level=high`: zero high/critical
+- [x] Trivy on all Docker images: zero CRITICAL; zero HIGH on API and Dashboard
 
 ---
 
